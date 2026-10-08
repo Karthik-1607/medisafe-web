@@ -1,0 +1,6 @@
+import { Link } from "wouter";
+import { ArrowLeft, ArrowRight, CircleAlert, Leaf, Search } from "lucide-react";
+
+export default function NotFound() {
+  return <div className="error-page"><header className="error-header"><Link href="/" className="journey-brand"><span className="landing-brand-mark"><Leaf size={20} /></span><span><strong>mindsafe</strong><small>a softer way forward</small></span></Link><Link href="/" className="login-back"><ArrowLeft size={14} /> Back to site</Link></header><main className="error-main"><div className="error-orb"><CircleAlert size={31} /></div><span className="journey-eyebrow"><Search size={14} /> Route not found</span><h1>That page<br /><em>isn’t here.</em></h1><p>The link may have changed, or the page may still be finding its place. You can return to a safe starting point below.</p><div className="error-actions"><Link href="/" className="landing-primary-action">Go to home <ArrowRight size={16} /></Link><Link href="/help" className="landing-secondary-action">Get help <ArrowRight size={15} /></Link></div></main><footer className="journey-footer"><Link href="/"><Leaf size={16} /> mindsafe</Link><span>Private support for real life.</span><Link href="/emergency">Emergency support</Link></footer></div>;
+}
