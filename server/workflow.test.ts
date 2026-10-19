@@ -1,13 +1,27 @@
 import { describe, expect, it } from "vitest";
 import { appRouter } from "./routers";
-import type { TrpcContext } from "./_core/context";
+import type { SessionUser, TrpcContext } from "./_core/context";
 
-function createCaller() {
-  const ctx: TrpcContext = {
-    user: undefined,
-    req: { protocol: "https", headers: {} } as any,
-    res: {} as any,
-  };
+const doctorUser: SessionUser = {
+  id: 1,
+  openId: "workflow-doctor",
+  name: "Dr. Meera Mehta",
+  email: "meera@mindsafe.test",
+  loginMethod: "password",
+  role: "user",
+  createdAt: new Date(),
+  updatedAt: new Date(),
+  lastSignedIn: new Date(),
+  portalRole: "doctor",
+  patientId: 1,
+};
+
+function createCaller(user: SessionUser = doctorUser) {
+  const ctx = {
+    user,
+    req: { protocol: "https", headers: {} },
+    res: {},
+  } as unknown as TrpcContext;
   return appRouter.createCaller(ctx);
 }
 

@@ -39,10 +39,15 @@ export function getSessionCookieOptions(
   //       ? hostname
   //       : undefined;
 
+  const secure = isSecureRequest(req);
+
   return {
     httpOnly: true,
     path: "/",
-    sameSite: "none",
-    secure: isSecureRequest(req),
+    // Browsers reject `SameSite=None` unless the cookie is also `Secure`, so
+    // plain-http local development has to use `lax` (same-origin SPA requests
+    // still carry it). https keeps `none` so cross-site previews keep working.
+    sameSite: secure ? "none" : "lax",
+    secure,
   };
 }

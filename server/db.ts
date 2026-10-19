@@ -662,3 +662,103 @@ export async function getAppointmentsForPatient(patientId: number): Promise<Appo
   return store.appointments.filter((a) => a.patientId === patientId).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 }
 
+export type AssessmentWithPatient = Assessment & {
+  patientName: string;
+  patientInitials: string;
+};
+
+/** Every assessment across all patients (clinician views). */
+export async function getAllAssessments(): Promise<AssessmentWithPatient[]> {
+  const db = await getDb();
+  if (db) {
+    try {
+      const results = await db
+        .select({
+          id: assessments.id,
+          patientId: assessments.patientId,
+          title: assessments.title,
+          type: assessments.type,
+          score: assessments.score,
+          maxScore: assessments.maxScore,
+          severity: assessments.severity,
+          answersJson: assessments.answersJson,
+          completedAt: assessments.completedAt,
+          patientName: patientProfiles.name,
+          patientInitials: patientProfiles.initials,
+        })
+        .from(assessments)
+        .innerJoin(patientProfiles, eq(assessments.patientId, patientProfiles.id));
+      return results.sort(
+        (a, b) => new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime(),
+      );
+    } catch (err) {
+      console.warn("[Database] MySQL getAllAssessments failed:", err);
+    }
+  }
+  const store = readLocalStore();
+  return store.assessments
+    .map((assessment) => {
+      const patient = store.patients.find((p) => p.id === assessment.patientId);
+      return {
+        ...assessment,
+        patientName: patient?.name ?? "Unknown patient",
+        patientInitials: patient?.initials ?? "?",
+      };
+    })
+    .sort((a, b) => new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime());
+}
+
+export type PrescriptionWithItems = Prescription & {
+  items: PrescriptionItem[];
+  patientName: string;
+  patientInitials: string;
+};
+
+/** Every prescription (with its medicines) across all patients (clinician views). */
+export async function getAllPrescriptionsWithItems(): Promise<PrescriptionWithItems[]> {
+  const db = await getDb();
+  if (db) {
+    try {
+      const rows = await db
+        .select({
+          id: prescriptions.id,
+          patientId: prescriptions.patientId,
+          doctorId: prescriptions.doctorId,
+          doctorName: prescriptions.doctorName,
+          prescriptionDate: prescriptions.prescriptionDate,
+          doctorNotes: prescriptions.doctorNotes,
+          createdAt: prescriptions.createdAt,
+          patientName: patientProfiles.name,
+          patientInitials: patientProfiles.initials,
+        })
+        .from(prescriptions)
+        .innerJoin(patientProfiles, eq(prescriptions.patientId, patientProfiles.id));
+      const allItems = await db.select().from(prescriptionItems);
+      return rows
+        .sort((a, b) => new Date(b.prescriptionDate).getTime() - new Date(a.prescriptionDate).getTime())
+        .map((row) => ({
+          ...row,
+          items: allItems
+            .filter((item) => item.prescriptionId === row.id)
+            .sort((a, b) => a.id - b.id),
+        }));
+    } catch (err) {
+      console.warn("[Database] MySQL getAllPrescriptionsWithItems failed:", err);
+    }
+  }
+  const store = readLocalStore();
+  return store.prescriptions
+    .sort((a, b) => new Date(b.prescriptionDate).getTime() - new Date(a.prescriptionDate).getTime())
+    .map((prescription) => {
+      const patient = store.patients.find((p) => p.id === prescription.patientId);
+      return {
+        ...prescription,
+        items: store.prescriptionItems
+          .filter((item) => item.prescriptionId === prescription.id)
+          .sort((a, b) => a.id - b.id),
+        patientName: patient?.name ?? "Unknown patient",
+        patientInitials: patient?.initials ?? "?",
+      };
+    });
+}
+

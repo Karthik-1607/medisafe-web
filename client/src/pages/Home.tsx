@@ -1,6 +1,11 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
+
+// Set page title on mount
+useEffect(() => {
+  document.title = "MindSafe — A softer way forward";
+}, []);
 import {
   Activity,
   ArrowLeft,
@@ -23,6 +28,7 @@ import {
   Languages,
   LineChart,
   LockKeyhole,
+  LogOut,
   Menu,
   MessageCircle,
   Mic,
@@ -47,9 +53,10 @@ import { cn } from "@/lib/utils";
 import { getStoredLanguage, languageLabels, storeLanguage, type Language } from "@/lib/language";
 import { useTheme } from "@/contexts/ThemeContext";
 import { trpc } from "@/lib/trpc";
+import { canAccessSection, navFromLocation, portalHref, type PortalNavId, type PortalRole } from "@/lib/portalNav";
 
-type Role = "patient" | "doctor";
-type NavId = "Overview" | "Companion" | "Assessments" | "Wellness" | "Care team" | "My Records" | "Patients" | "Medication" | "Alerts";
+type Role = PortalRole;
+type NavId = PortalNavId;
 
 type NavItem = {
   label: NavId;
@@ -89,18 +96,34 @@ function localizedNavLabel(label: NavId, language: Language) {
   return navLabels[language][label] ?? label;
 }
 
-const patientRows = [
-  { initials: "AR", name: "Aarav Rao", detail: "Depression support", mood: "Improving", moodTone: "mint", last: "12 min ago", status: "Review today" },
-  { initials: "SP", name: "Sana Patel", detail: "Recovery pathway", mood: "Steady", moodTone: "sand", last: "Yesterday", status: "On track" },
-  { initials: "VK", name: "Vikram Kulkarni", detail: "Anxiety support", mood: "Needs care", moodTone: "rose", last: "2 days ago", status: "Follow up" },
-  { initials: "NM", name: "Nisha Menon", detail: "Academic pressure", mood: "Improving", moodTone: "blue", last: "Sep 23", status: "On track" },
-];
+function initialsOf(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "MS";
+  return parts.slice(0, 2).map((part) => part[0]!.toUpperCase()).join("");
+}
 
-const assessmentRows = [
-  { name: "PHQ-9", type: "Mood check-in", patient: "Aarav Rao", status: "Ready to review", tone: "mint", date: "Today" },
-  { name: "GAD-7", type: "Anxiety screen", patient: "Sana Patel", status: "In progress", tone: "sand", date: "Yesterday" },
-  { name: "DAST-10", type: "Recovery check", patient: "Vikram Kulkarni", status: "Needs unlock", tone: "rose", date: "Sep 25" },
-];
+/** Session intention survives reloads without leaving the browser. */
+const INTENTION_STORAGE_KEY = "mindsafe.session-intention";
+
+/** Time-of-day greeting in English or Telugu (Tenglish keeps English). */
+function greetingForNow(language: Language): string {
+  const telugu = language === "telugu";
+  const hour = new Date().getHours();
+  if (hour < 12) return telugu ? "శుభోదయం" : "Good morning";
+  if (hour < 17) return telugu ? "శుభ మధ్యాహ్నం" : "Good afternoon";
+  return telugu ? "శుభ సాయంత్రం" : "Good evening";
+}
+
+/** Minimal structural type for the Web Speech API (absent from lib.dom). */
+type SpeechRecognitionLike = {
+  lang: string;
+  interimResults: boolean;
+  onresult: ((event: { results: Array<Array<{ transcript: string }>> }) => void) | null;
+  onerror: (() => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+};
 
 function Logo() {
   return (
@@ -247,16 +270,60 @@ function PatientOverview({ onNavigate }: { onNavigate: (nav: NavId) => void }) {
 }
 
 function PatientCompanion() {
+  const meQuery = trpc.auth.me.useQuery(undefined, { retry: false, refetchOnWindowFocus: false });
+  const firstName = meQuery.data?.name?.trim().split(/\s+/)[0] || "there";
+  const patientInitials = initialsOf(meQuery.data?.name || "You");
+
   const [draft, setDraft] = useState("");
-  const [messages, setMessages] = useState<Array<{ from: "companion" | "patient"; text: string }>>([
-    { from: "companion", text: "Hi Ananya. I’m here with you. What feels most present today?" },
-    { from: "patient", text: "I think I’m carrying a lot from this week." },
-    { from: "companion", text: "That makes sense. We can make a little room for it, one thought at a time." },
+  const [messages, setMessages] = useState<Array<{ from: "companion" | "patient"; text: string; degraded?: boolean }>>(() => [
+    { from: "companion", text: `Hi ${firstName}. I’m here with you. What feels most present today?` },
   ]);
-  const [sessionIntention, setSessionIntention] = useState("");
-  const [intentionSaved, setIntentionSaved] = useState(false);
+  const [listening, setListening] = useState(false);
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+
+  // The session intention is a real save: it survives reloads.
+  const [sessionIntention, setSessionIntention] = useState<string>(() => {
+    try {
+      return localStorage.getItem(INTENTION_STORAGE_KEY) ?? "";
+    } catch {
+      return "";
+    }
+  });
+  const [intentionSaved, setIntentionSaved] = useState(() => Boolean(sessionIntention));
 
   const aiChatMutation = trpc.ai.chat.useMutation();
+
+  const toggleVoiceInput = () => {
+    const SpeechRecognitionCtor =
+      (window as unknown as { SpeechRecognition?: unknown; webkitSpeechRecognition?: unknown }).SpeechRecognition ||
+      (window as unknown as { webkitSpeechRecognition?: unknown }).webkitSpeechRecognition;
+
+    if (!SpeechRecognitionCtor) {
+      toast.info("Voice input isn't supported in this browser — type your message instead.");
+      return;
+    }
+
+    if (listening) {
+      recognitionRef.current?.stop();
+      return;
+    }
+
+    const recognition = new (SpeechRecognitionCtor as new () => SpeechRecognitionLike)();
+    recognition.lang = getStoredLanguage() === "telugu" ? "te-IN" : "en-IN";
+    recognition.interimResults = false;
+    recognition.onresult = (event) => {
+      const transcript = event.results?.[0]?.[0]?.transcript ?? "";
+      if (transcript) setDraft((prev) => (prev ? `${prev} ${transcript}` : transcript));
+    };
+    recognition.onerror = () => {
+      setListening(false);
+      toast.error("I couldn't hear that. Please try again.");
+    };
+    recognition.onend = () => setListening(false);
+    recognitionRef.current = recognition;
+    setListening(true);
+    recognition.start();
+  };
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -272,13 +339,17 @@ function PatientCompanion() {
         role: m.from === "patient" ? ("user" as const) : ("assistant" as const),
         content: m.text,
       }));
-      const reply = await aiChatMutation.mutateAsync({ messages: formattedForAi });
-      setMessages((prev) => [...prev, { from: "companion", text: reply }]);
+      const { reply, degraded } = await aiChatMutation.mutateAsync({ messages: formattedForAi });
+      setMessages((prev) => [...prev, { from: "companion", text: reply, degraded }]);
+      if (degraded) {
+        toast.error("The companion service is unreachable — that reply was a fixed fallback notice.");
+      }
     } catch (err) {
       setMessages((prev) => [
         ...prev,
-        { from: "companion", text: "Thank you for putting that into words. I'm right here with you. Let's take a gentle breath together." },
+        { from: "companion", degraded: true, text: "The companion service can't be reached right now, so no real reply was generated. Please try again in a moment." },
       ]);
+      toast.error("The companion service is unreachable.");
     }
   };
 
@@ -296,13 +367,14 @@ function PatientCompanion() {
           <span className="privacy-pill"><LockKeyhole size={12} /> private</span>
         </div>
         <div className="chat-space">
-          <div className="session-date"><span /> Sunday, September 27 <span /></div>
+          <div className="session-date"><span /> {new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })} <span /></div>
           {messages.map((message, index) => (
             <div key={`${message.from}-${index}`} className={cn("chat-row", message.from === "patient" && "chat-row-patient")}>
               <div className={cn("chat-avatar", message.from === "patient" ? "chat-avatar-patient" : "chat-avatar-companion")}>
-                {message.from === "patient" ? "A" : <Sparkles size={14} />}
+                {message.from === "patient" ? patientInitials : <Sparkles size={14} />}
               </div>
-              <div className={cn("chat-bubble", message.from === "patient" ? "chat-bubble-patient" : "chat-bubble-companion")}>
+              <div className={cn("chat-bubble", message.from === "patient" ? "chat-bubble-patient" : "chat-bubble-companion", message.degraded && "text-xs italic text-[#71817d]")}>
+                {message.degraded && <span className="not-italic font-semibold">Offline notice: </span>}
                 {message.text}
               </div>
             </div>
@@ -317,8 +389,14 @@ function PatientCompanion() {
           )}
         </div>
         <form onSubmit={submit} className="chat-composer">
-          <button type="button" className="composer-icon" onClick={() => toast.info("Voice input mode active: speak your thoughts aloud.")}>
-            <Mic size={18} />
+          <button
+            type="button"
+            className={cn("composer-icon", listening && "text-[#b3452f]")}
+            onClick={toggleVoiceInput}
+            aria-label={listening ? "Stop voice input" : "Start voice input"}
+            title={listening ? "Stop voice input" : "Speak your message"}
+          >
+            <Mic size={18} className={listening ? "animate-pulse" : ""} />
           </button>
           <input
             value={draft}
@@ -333,7 +411,7 @@ function PatientCompanion() {
         </form>
         <div className="mt-3 flex items-center justify-between text-[11px] text-[#8b9a95]">
           <span>Companion responses are supportive, not medical advice.</span>
-          <span>18 min remaining today</span>
+          <span>{messages.length} message{messages.length === 1 ? "" : "s"} this session</span>
         </div>
       </section>
       <aside className="space-y-5">
@@ -356,8 +434,16 @@ function PatientCompanion() {
           <button
             className="panel-action mt-3"
             onClick={() => {
+              const value = sessionIntention.trim();
+              try {
+                if (value) localStorage.setItem(INTENTION_STORAGE_KEY, value);
+                else localStorage.removeItem(INTENTION_STORAGE_KEY);
+              } catch {
+                // Storage can be unavailable in private modes; the session
+                // state below still reflects the save for this visit.
+              }
               setIntentionSaved(true);
-              toast.success(sessionIntention.trim() ? `Intention saved: "${sessionIntention}"` : "Intention saved for this session");
+              toast.success(value ? `Intention saved: "${value}"` : "Intention cleared for this session");
             }}
           >
             {intentionSaved ? "✓ Intention saved" : "Save intention"} <ArrowUpRight size={15} />
@@ -372,22 +458,13 @@ function PatientCompanion() {
             <MoreHorizontal size={18} className="text-[#9aa8a3]" />
           </div>
           <div className="mt-5 space-y-3">
-            <button
-              className="recent-session w-full text-left cursor-pointer"
-              onClick={() => toast.info("Previous session: 'Making room' · 12 min · Key takeaway: Made room for weekly stress.")}
-            >
+            <div className="recent-session w-full text-left">
               <span className="recent-session-icon"><MessageCircle size={15} /></span>
-              <span><strong>Making room</strong><small>Yesterday · 12 min</small></span>
-              <ChevronRight size={15} />
-            </button>
-            <button
-              className="recent-session w-full text-left cursor-pointer"
-              onClick={() => toast.info("Previous session: 'Finding my pace' · 8 min · Key takeaway: Noticed breathing reset helped.")}
-            >
-              <span className="recent-session-icon"><Wind size={15} /></span>
-              <span><strong>Finding my pace</strong><small>Sep 24 · 8 min</small></span>
-              <ChevronRight size={15} />
-            </button>
+              <span>
+                <strong>No saved sessions yet</strong>
+                <small>Sessions are not stored — only your assessments, notes, and records are saved.</small>
+              </span>
+            </div>
           </div>
         </div>
       </aside>
@@ -1218,6 +1295,8 @@ function PatientMyRecords() {
 
 function DoctorPatientDetails({ patientId, onBack }: { patientId: number; onBack: () => void }) {
   const detailsQuery = trpc.patients.getDetails.useQuery({ patientId });
+  const meQuery = trpc.auth.me.useQuery(undefined, { retry: false, refetchOnWindowFocus: false });
+  const clinicianName = meQuery.data?.name?.trim() || "Dr. Meera Mehta";
   const createPrescriptionMutation = trpc.prescriptions.create.useMutation();
 
   const [medicines, setMedicines] = useState<Array<{ drugName: string; dosage: string; duration: string; foodRestrictions: string }>>([
@@ -1263,8 +1342,8 @@ function DoctorPatientDetails({ patientId, onBack }: { patientId: number; onBack
     try {
       await createPrescriptionMutation.mutateAsync({
         patientId,
-        doctorId: 1,
-        doctorName: "Dr. Meera Mehta",
+        doctorId: meQuery.data?.id ?? 1,
+        doctorName: clinicianName,
         doctorNotes: doctorNotes.trim() || undefined,
         medicines: medicines.map((m) => ({
           drugName: m.drugName.trim(),
@@ -1553,19 +1632,24 @@ function DoctorPatientDetails({ patientId, onBack }: { patientId: number; onBack
 }
 
 function DoctorOverview({ onNavigate }: { onNavigate: (nav: NavId) => void }) {
-  const [selected, setSelected] = useState(patientRows[0]);
+  const meQuery = trpc.auth.me.useQuery(undefined, { retry: false, refetchOnWindowFocus: false });
+  const patientsQuery = trpc.patients.list.useQuery();
+  const patients = patientsQuery.data ?? [];
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const selected = patients.find((patient) => patient.id === selectedId) ?? patients[0];
   const [showNoteModal, setShowNoteModal] = useState(false);
   const [noteContent, setNoteContent] = useState("");
   const createNoteMutation = trpc.notes.create.useMutation();
+  const clinicianName = meQuery.data?.name?.trim() || "Dr. Meera Mehta";
 
   const handleAddNote = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!noteContent.trim()) return;
+    if (!noteContent.trim() || !selected) return;
     try {
       await createNoteMutation.mutateAsync({
-        patientId: 1, // Aarav Rao / selected patient
-        doctorId: 1,
-        doctorName: "Dr. Meera Mehta",
+        patientId: selected.id,
+        doctorId: meQuery.data?.id ?? 1,
+        doctorName: clinicianName,
         note: noteContent.trim(),
       });
       toast.success(`Clinical note saved for ${selected.name}.`);
@@ -1580,7 +1664,7 @@ function DoctorOverview({ onNavigate }: { onNavigate: (nav: NavId) => void }) {
     <div className="space-y-8">
       <section className="doctor-hero">
         <div>
-          <span className="hero-kicker hero-kicker-dark"><span className="live-dot live-dot-dark" /> Monday care brief</span>
+          <span className="hero-kicker hero-kicker-dark"><span className="live-dot live-dot-dark" /> {new Date().toLocaleDateString(undefined, { weekday: "long" })} care brief</span>
           <h2 className="doctor-heading mt-4">Good care starts<br /><em>with noticing.</em></h2>
           <p className="doctor-copy mt-4">A focused view of the people who are trusting you with their next step.</p>
         </div>
@@ -1588,9 +1672,9 @@ function DoctorOverview({ onNavigate }: { onNavigate: (nav: NavId) => void }) {
       </section>
 
       <section className="grid gap-4 md:grid-cols-3">
-        <StatCard icon={Users} label="Active patients" value="12" note="this month" tone="blue" />
-        <StatCard icon={FileCheck2} label="To review" value="03" note="before Friday" tone="mint" />
-        <StatCard icon={CircleAlert} label="Safety alerts" value="01" note="needs attention" tone="rose" />
+        <StatCard icon={Users} label="Active patients" value={patientsQuery.isLoading ? "…" : String(patients.length)} note="in your care room" tone="blue" />
+        <StatCard icon={FileCheck2} label="To review" value={patientsQuery.isLoading ? "…" : String(patients.filter((patient) => patient.status === "Review today").length)} note="today" tone="mint" />
+        <StatCard icon={CircleAlert} label="Safety alerts" value={patientsQuery.isLoading ? "…" : String(patients.filter((patient) => patient.mood === "Needs care").length)} note="needs attention" tone="rose" />
       </section>
 
       <section className="grid gap-5 xl:grid-cols-[1.05fr_1.5fr]">
@@ -1603,33 +1687,38 @@ function DoctorOverview({ onNavigate }: { onNavigate: (nav: NavId) => void }) {
             <button onClick={() => onNavigate("Patients")} className="quiet-link">View all <ArrowUpRight size={15} /></button>
           </div>
           <div className="mt-5 space-y-2">
-            {patientRows.map((patient) => (
+            {patientsQuery.isLoading && <p className="animate-pulse text-xs text-[#71817d]">Loading patients…</p>}
+            {!patientsQuery.isLoading && patients.length === 0 && (
+              <p className="text-xs text-[#71817d]">No patients found. Add one from the Patients view.</p>
+            )}
+            {patients.map((patient) => (
               <button
-                key={patient.name}
-                onClick={() => setSelected(patient)}
-                className={cn("patient-row", selected.name === patient.name && "patient-row-selected")}
+                key={patient.id}
+                onClick={() => setSelectedId(patient.id)}
+                className={cn("patient-row", selected?.id === patient.id && "patient-row-selected")}
               >
-                <Avatar initials={patient.initials} tone={patient.moodTone} size="sm" />
+                <Avatar initials={patient.initials} tone={patient.moodTone ?? "ink"} size="sm" />
                 <span className="min-w-0 flex-1 text-left">
                   <strong>{patient.name}</strong>
-                  <small>{patient.detail}</small>
+                  <small>{patient.condition}</small>
                 </span>
-                <span className={cn("mood-status", `mood-status-${patient.moodTone}`)}>{patient.mood}</span>
-                <span className="patient-last">{patient.last}</span>
+                <span className={cn("mood-status", `mood-status-${patient.moodTone ?? "mint"}`)}>{patient.mood}</span>
+                <span className="patient-last">{patient.lastSeen}</span>
                 <ChevronRight size={15} className="text-[#a3ada8]" />
               </button>
             ))}
           </div>
         </div>
 
+        {selected && (
         <div className="surface-card patient-detail">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="flex items-center gap-3">
-              <Avatar initials={selected.initials} tone={selected.moodTone} size="lg" />
+              <Avatar initials={selected.initials} tone={selected.moodTone ?? "ink"} size="lg" />
               <div>
                 <Eyebrow>Selected patient</Eyebrow>
                 <h2 className="section-title mt-1">{selected.name}</h2>
-                <p className="muted-copy mt-1">{selected.detail} · 24 years old</p>
+                <p className="muted-copy mt-1">{selected.condition} · {selected.age} years old</p>
               </div>
             </div>
             <button className="icon-button" onClick={() => onNavigate("Patients")} aria-label="Open complete patient profile">
@@ -1637,25 +1726,17 @@ function DoctorOverview({ onNavigate }: { onNavigate: (nav: NavId) => void }) {
             </button>
           </div>
           <div className="detail-stat-row mt-7">
-            <div><span>Latest mood</span><strong>6.8 <small>/ 10</small></strong><em className="trend-up">↗ 0.8 this week</em></div>
-            <div><span>Last session</span><strong>Yesterday</strong><em>12 minutes</em></div>
-            <div><span>Care status</span><strong className="text-[#39766d]">{selected.status}</strong><em>next review in 2 days</em></div>
+            <div><span>Current mood</span><strong className="text-sm">{selected.mood}</strong><em>as recorded</em></div>
+            <div><span>Last seen</span><strong className="text-sm">{selected.lastSeen}</strong><em>{selected.gender || "patient"}</em></div>
+            <div><span>Care status</span><strong className="text-[#39766d]">{selected.status}</strong><em>{selected.condition}</em></div>
           </div>
-          <div className="doctor-chart mt-7">
-            <div className="flex items-center justify-between">
-              <span className="chart-caption">Mood trend · last 14 days</span>
-              <span className="chart-caption">steady upward</span>
-            </div>
-            <svg viewBox="0 0 700 120" preserveAspectRatio="none" aria-label="Patient mood trend">
-              <path d="M0 86 C55 92 64 70 114 76 S180 58 228 72 S292 48 340 62 S405 68 445 45 S515 54 555 35 S615 41 700 20" className="doctor-chart-line" />
-              <circle cx="700" cy="20" r="4" className="doctor-chart-point" />
-            </svg>
-          </div>
+          <LatestAssessmentCard patientId={selected.id} onNavigate={onNavigate} />
           <div className="mt-6 flex flex-wrap gap-3">
             <ActionButton onClick={() => onNavigate("Assessments")}>Review latest assessment <ArrowUpRight size={16} /></ActionButton>
             <button className="outline-action" onClick={() => setShowNoteModal(true)}>Add a note</button>
           </div>
         </div>
+        )}
       </section>
 
       {/* Add Clinical Note Modal */}
@@ -1665,7 +1746,7 @@ function DoctorOverview({ onNavigate }: { onNavigate: (nav: NavId) => void }) {
             <div className="flex items-start justify-between border-b border-[#e7ebe5] pb-3">
               <div>
                 <Eyebrow>Clinical Documentation</Eyebrow>
-                <h3 className="section-title mt-1">Add Note for {selected.name}</h3>
+                <h3 className="section-title mt-1">Add Note for {selected?.name ?? "patient"}</h3>
               </div>
               <button onClick={() => setShowNoteModal(false)} className="icon-button"><X size={18} /></button>
             </div>
@@ -1713,11 +1794,6 @@ function DoctorPatients() {
         eyebrow="Patient panel"
         title="People in your care."
         detail="Select a patient to view complete details, uploaded records, and create prescriptions."
-        action={
-          <ActionButton onClick={() => toast.info("Patient invitation sent to new profile.")}>
-            <Plus size={16} /> Add patient
-          </ActionButton>
-        }
       />
       <div className="surface-card overflow-hidden">
         <div className="table-toolbar flex items-center justify-between p-4 border-b border-[#e7ebe5]">
@@ -1731,9 +1807,6 @@ function DoctorPatients() {
             />
             {searchTerm && <button onClick={() => setSearchTerm("")} className="text-xs text-[#8a9993]"><X size={14} /></button>}
           </div>
-          <button className="filter-button" onClick={() => toast.info("Filtered by active care plans")}>
-            <RotateCcw size={15} /> Recently active
-          </button>
         </div>
         <div className="patient-table">
           {patientsQuery.isLoading ? (
@@ -1790,54 +1863,54 @@ function DoctorPatients() {
   );
 }
 
-function DoctorAssessments() {
-  const [selectedAssessment, setSelectedAssessment] = useState<{ name: string; patient: string; type: string; date: string; status: string } | null>(null);
-  const [showAssignModal, setShowAssignModal] = useState(false);
-  const [assignPatient, setAssignPatient] = useState("Aarav Rao");
-  const [assignType, setAssignType] = useState("PHQ-9 Mood check-in");
-
-  const handleAssign = (e: React.FormEvent) => {
-    e.preventDefault();
-    toast.success(`${assignType} assigned to ${assignPatient}.`);
-    setShowAssignModal(false);
-  };
+function DoctorAssessments({ onNavigate }: { onNavigate: (nav: NavId) => void }) {
+  const assessmentsQuery = trpc.assessments.listAll.useQuery();
+  const rows = assessmentsQuery.data ?? [];
+  const [selectedAssessment, setSelectedAssessment] = useState<(typeof rows)[number] | null>(null);
 
   return (
     <div className="space-y-8">
       <SectionHeading
         eyebrow="Clinical review"
         title="Assessments, without the noise."
-        detail="Validated check-ins waiting for your attention."
-        action={
-          <button className="quiet-link" onClick={() => setShowAssignModal(true)}>
-            Assign assessment <Plus size={15} />
-          </button>
-        }
+        detail="Check-ins your patients have completed, straight from their portal."
       />
       <div className="grid gap-3">
-        {assessmentRows.map((assessment) => (
-          <div className="surface-card assessment-review-row" key={assessment.name + assessment.patient}>
-            <div className={cn("assessment-icon", assessment.tone)}><FileCheck2 size={19} /></div>
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <h3 className="card-title">{assessment.name}</h3>
-                <span className="muted-copy">{assessment.type}</span>
-              </div>
-              <p className="mt-2 text-sm text-[#4d605b]">
-                {assessment.patient} <span className="mx-1 text-[#b7c0bb]">·</span> {assessment.date}
-              </p>
-            </div>
-            <span className={cn("status-tag", assessment.tone === "rose" ? "status-tag-rose" : assessment.tone === "sand" ? "status-tag-sand" : "status-tag-mint")}>
-              {assessment.status}
-            </span>
-            <button
-              className="outline-action"
-              onClick={() => setSelectedAssessment({ name: assessment.name, patient: assessment.patient, type: assessment.type, date: assessment.date, status: assessment.status })}
-            >
-              Open <ArrowUpRight size={15} />
-            </button>
+        {assessmentsQuery.isLoading && (
+          <div className="surface-card p-6 text-center muted-copy">Loading assessments…</div>
+        )}
+        {!assessmentsQuery.isLoading && rows.length === 0 && (
+          <div className="surface-card p-6 text-center muted-copy">
+            No assessments submitted yet. Patients complete PHQ-9 and GAD-7 check-ins from their portal.
           </div>
-        ))}
+        )}
+        {rows.map((assessment) => {
+          const share = assessment.maxScore > 0 ? assessment.score / assessment.maxScore : 0;
+          const tone = share >= 0.7 ? "rose" : share >= 0.4 ? "sand" : "mint";
+          return (
+            <div className="surface-card assessment-review-row" key={assessment.id}>
+              <div className={cn("assessment-icon", tone)}><FileCheck2 size={19} /></div>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="card-title">{assessment.title}</h3>
+                  <span className="muted-copy">{assessment.type}</span>
+                </div>
+                <p className="mt-2 text-sm text-[#4d605b]">
+                  {assessment.patientName} <span className="mx-1 text-[#b7c0bb]">·</span> {assessment.score}/{assessment.maxScore} · {new Date(assessment.completedAt).toLocaleDateString()}
+                </p>
+              </div>
+              <span className={cn("status-tag", tone === "rose" ? "status-tag-rose" : tone === "sand" ? "status-tag-sand" : "status-tag-mint")}>
+                {assessment.severity || "Recorded"}
+              </span>
+              <button
+                className="outline-action"
+                onClick={() => setSelectedAssessment(assessment)}
+              >
+                Open <ArrowUpRight size={15} />
+              </button>
+            </div>
+          );
+        })}
       </div>
 
       {/* Review Modal */}
@@ -1847,62 +1920,25 @@ function DoctorAssessments() {
             <div className="flex items-start justify-between border-b border-[#e7ebe5] pb-3">
               <div>
                 <Eyebrow>Clinical Review</Eyebrow>
-                <h3 className="section-title mt-1">{selectedAssessment.name} — {selectedAssessment.patient}</h3>
+                <h3 className="section-title mt-1">{selectedAssessment.title} — {selectedAssessment.patientName}</h3>
               </div>
               <button onClick={() => setSelectedAssessment(null)} className="icon-button"><X size={18} /></button>
             </div>
             <div className="space-y-3 bg-[#f8fbf8] p-4 rounded-xl border border-[#e2eae4] text-xs text-[#355850]">
               <p><strong>Assessment Type:</strong> {selectedAssessment.type}</p>
-              <p><strong>Patient:</strong> {selectedAssessment.patient}</p>
-              <p><strong>Date Submitted:</strong> {selectedAssessment.date}</p>
-              <p><strong>Status:</strong> {selectedAssessment.status}</p>
-              <p className="mt-2 text-[#4e625c]">
-                <strong>Clinical Notes:</strong> Patient answers indicate steady progress. PHQ-9 score improved by 3 points compared to prior baseline.
-              </p>
+              <p><strong>Patient:</strong> {selectedAssessment.patientName}</p>
+              <p><strong>Score:</strong> {selectedAssessment.score}/{selectedAssessment.maxScore}{selectedAssessment.severity ? ` · ${selectedAssessment.severity}` : ""}</p>
+              <p><strong>Submitted:</strong> {new Date(selectedAssessment.completedAt).toLocaleString()}</p>
+              {selectedAssessment.answersJson && (
+                <p className="break-words text-[#4e625c]"><strong>Answers:</strong> {selectedAssessment.answersJson}</p>
+              )}
             </div>
-            <div className="flex items-center justify-end gap-3">
-              <ActionButton onClick={() => { toast.success(`${selectedAssessment.name} review confirmed`); setSelectedAssessment(null); }}>
-                Mark Reviewed <Check size={16} />
+            <div className="flex items-center justify-between gap-3">
+              <button className="outline-action" onClick={() => setSelectedAssessment(null)}>Close</button>
+              <ActionButton onClick={() => { setSelectedAssessment(null); onNavigate("Patients"); }}>
+                Open patient panel <ArrowUpRight size={16} />
               </ActionButton>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* Assign Modal */}
-      {showAssignModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-          <div className="bg-[#ffffff] rounded-2xl max-w-md w-full p-6 shadow-xl border border-[#e2eae4] space-y-4">
-            <div className="flex items-start justify-between border-b border-[#e7ebe5] pb-3">
-              <div>
-                <Eyebrow>Care Plan Assignment</Eyebrow>
-                <h3 className="section-title mt-1">Assign Assessment</h3>
-              </div>
-              <button onClick={() => setShowAssignModal(false)} className="icon-button"><X size={18} /></button>
-            </div>
-            <form onSubmit={handleAssign} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-[#355850] mb-1">Select Patient</label>
-                <select value={assignPatient} onChange={(e) => setAssignPatient(e.target.value)} className="w-full px-3 py-2 text-xs border border-[#dce7df] rounded-lg bg-[#f8fbf8] text-[#173330]">
-                  <option value="Aarav Rao">Aarav Rao</option>
-                  <option value="Sana Patel">Sana Patel</option>
-                  <option value="Vikram Kulkarni">Vikram Kulkarni</option>
-                  <option value="Nisha Menon">Nisha Menon</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-[#355850] mb-1">Assessment Type</label>
-                <select value={assignType} onChange={(e) => setAssignType(e.target.value)} className="w-full px-3 py-2 text-xs border border-[#dce7df] rounded-lg bg-[#f8fbf8] text-[#173330]">
-                  <option value="PHQ-9 Mood check-in">PHQ-9 Mood check-in</option>
-                  <option value="GAD-7 Anxiety screen">GAD-7 Anxiety screen</option>
-                  <option value="DAST-10 Recovery check">DAST-10 Recovery check</option>
-                </select>
-              </div>
-              <div className="flex items-center justify-end gap-3 pt-2">
-                <button type="button" onClick={() => setShowAssignModal(false)} className="outline-action">Cancel</button>
-                <ActionButton type="submit"><Check size={15} /> Assign to Patient</ActionButton>
-              </div>
-            </form>
           </div>
         </div>
       )}
@@ -1917,90 +1953,135 @@ function DoctorAssessments() {
 }
 
 function DoctorMedication() {
-  const medications = [
-    { patient: "Aarav Rao", initials: "AR", name: "Sertraline", dosage: "50 mg · once daily", review: "Review in 12 days", tone: "mint" },
-    { patient: "Sana Patel", initials: "SP", name: "Propranolol", dosage: "10 mg · as needed", review: "Review in 6 days", tone: "sand" },
-    { patient: "Nisha Menon", initials: "NM", name: "Escitalopram", dosage: "5 mg · once daily", review: "Review in 21 days", tone: "blue" },
-  ];
+  const prescriptionsQuery = trpc.prescriptions.listAll.useQuery();
+  const prescriptions = prescriptionsQuery.data ?? [];
+
   return (
     <div className="space-y-8">
-      <SectionHeading eyebrow="Treatment notes" title="Medication, with context." detail="Keep the prescription visible alongside how the patient is feeling." />
+      <SectionHeading eyebrow="Treatment notes" title="Medication, with context." detail="Every prescription saved in the care room, with its instructions." />
       <div className="grid gap-4">
-        {medications.map((medication) => (
-          <div className="surface-card medication-row" key={medication.patient}>
-            <Avatar initials={medication.initials} tone={medication.tone} size="md" />
-            <div className="min-w-0 flex-1">
-              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#8a9993]">{medication.patient}</p>
-              <h3 className="card-title mt-1">{medication.name}</h3>
-              <p className="muted-copy mt-1">{medication.dosage}</p>
+        {prescriptionsQuery.isLoading && (
+          <div className="surface-card p-6 text-center muted-copy">Loading prescriptions…</div>
+        )}
+        {!prescriptionsQuery.isLoading && prescriptions.length === 0 && (
+          <div className="surface-card p-6 text-center muted-copy">No prescriptions have been created yet.</div>
+        )}
+        {prescriptions.flatMap((prescription) =>
+          prescription.items.map((item) => (
+            <div className="surface-card medication-row" key={`${prescription.id}-${item.id}`}>
+              <Avatar initials={prescription.patientInitials} tone="mint" size="md" />
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#8a9993]">{prescription.patientName}</p>
+                <h3 className="card-title mt-1">{item.drugName}</h3>
+                <p className="muted-copy mt-1">{item.dosage} · {item.duration}</p>
+                {item.foodRestrictions && <p className="mt-1 text-xs text-[#71817d]">{item.foodRestrictions}</p>}
+              </div>
+              <div className="medication-review">
+                <span>Prescribed</span>
+                <strong>{new Date(prescription.prescriptionDate).toLocaleDateString()}</strong>
+              </div>
             </div>
-            <div className="medication-review"><span>Next review</span><strong>{medication.review}</strong></div>
-            <button className="icon-button" onClick={() => toast.info(`Prescription details for ${medication.name} (${medication.patient})`)}>
-              <MoreHorizontal size={18} />
-            </button>
-          </div>
-        ))}
+          )),
+        )}
       </div>
     </div>
   );
 }
 
 function DoctorAlerts({ onSelectPatient }: { onSelectPatient?: (patientId: number) => void }) {
-  const [alertReviewed, setAlertReviewed] = useState(false);
+  const patientsQuery = trpc.patients.list.useQuery();
+  const assessmentsQuery = trpc.assessments.listAll.useQuery();
+
+  const patients = patientsQuery.data ?? [];
+  const assessments = assessmentsQuery.data ?? [];
+
+  // Signals are derived from real data only: a profile flagged "Needs care",
+  // or a latest assessment scoring at least half of its maximum.
+  const latestByPatient = new Map<number, (typeof assessments)[number]>();
+  for (const assessment of [...assessments].sort(
+    (a, b) => new Date(a.completedAt).getTime() - new Date(b.completedAt).getTime(),
+  )) {
+    latestByPatient.set(assessment.patientId, assessment);
+  }
+
+  const signals = patients
+    .map((patient) => ({ patient, latest: latestByPatient.get(patient.id) }))
+    .filter(({ patient, latest }) =>
+      patient.mood === "Needs care" || Boolean(latest && latest.maxScore > 0 && latest.score / latest.maxScore >= 0.5),
+    );
+
+  const loading = patientsQuery.isLoading || assessmentsQuery.isLoading;
 
   return (
     <div className="space-y-8">
-      <SectionHeading eyebrow="Safety & follow-up" title="The moments that need you." detail="Crisis signals and care reminders, kept clear and actionable." />
-      <div className="surface-card alert-hero">
-        <div className="alert-symbol"><CircleAlert size={20} /></div>
-        <div>
-          <span className={cn("status-tag", alertReviewed ? "status-tag-mint" : "status-tag-rose")}>
-            {alertReviewed ? "Reviewed & Handled" : "Needs attention"}
-          </span>
-          <h3 className="panel-title mt-3">Vikram Kulkarni mentioned feeling unsafe.</h3>
-          <p className="muted-copy mt-2 max-w-xl">
-            A crisis-keyword signal was detected in a companion session 18 minutes ago. The patient was shown emergency support and the designated contact protocol is ready.
-          </p>
-          <div className="mt-5 flex flex-wrap gap-3">
-            <ActionButton
-              onClick={() => {
-                setAlertReviewed(true);
-                toast.success("Safety alert for Vikram Kulkarni marked as reviewed and protocol logged.");
-              }}
-            >
-              {alertReviewed ? "✓ Reviewed" : "Review alert"} <ArrowUpRight size={16} />
-            </ActionButton>
-            <button className="outline-action" onClick={() => onSelectPatient?.(3)}>
-              Open patient profile
-            </button>
-          </div>
-        </div>
-        <span className="alert-time">18 min ago</span>
-      </div>
+      <SectionHeading eyebrow="Safety & follow-up" title="The moments that need you." detail="Derived from profile flags and real assessment scores — nothing is simulated." />
 
-      <div className="grid gap-4 md:grid-cols-2">
+      {loading && <div className="surface-card p-6 text-center muted-copy">Checking for safety signals…</div>}
+
+      {!loading && signals.length === 0 && (
         <div className="surface-card reminder-card">
           <div className="flex items-start justify-between">
-            <div><Eyebrow>Care reminder</Eyebrow><h3 className="panel-title mt-1">Aarav’s review is due Friday.</h3></div>
-            <CalendarDays size={19} className="text-[#6d8982]" />
-          </div>
-          <p className="muted-copy mt-3">PHQ-9 and medication response are both ready to discuss.</p>
-          <button className="quiet-link mt-5" onClick={() => toast.success("Care reminder added to Friday list")}>
-            Add to care list <Plus size={15} />
-          </button>
-        </div>
-
-        <div className="surface-card reminder-card">
-          <div className="flex items-start justify-between">
-            <div><Eyebrow>System check</Eyebrow><h3 className="panel-title mt-1">All other patients are steady.</h3></div>
+            <div><Eyebrow>System check</Eyebrow><h3 className="panel-title mt-1">No active safety signals.</h3></div>
             <Check size={19} className="text-[#4e9386]" />
           </div>
-          <p className="muted-copy mt-3">No new safety signals since your last review.</p>
+          <p className="muted-copy mt-3">
+            No patient is currently flagged “Needs care”, and no recent assessment is in a high score band.
+          </p>
           <button className="quiet-link mt-5" onClick={() => onSelectPatient?.(1)}>
             View patient panel <ArrowUpRight size={15} />
           </button>
         </div>
+      )}
+
+      {signals.map(({ patient, latest }) => (
+        <div className="surface-card alert-hero" key={patient.id}>
+          <div className="alert-symbol"><CircleAlert size={20} /></div>
+          <div>
+            <span className="status-tag status-tag-rose">Needs attention</span>
+            <h3 className="panel-title mt-3">{patient.name} may need follow-up.</h3>
+            <p className="muted-copy mt-2 max-w-xl">
+              {patient.mood === "Needs care" ? "Profile mood is flagged as “Needs care”. " : ""}
+              {latest
+                ? `Latest assessment ${latest.title} scored ${latest.score}/${latest.maxScore}${latest.severity ? ` (${latest.severity})` : ""} on ${new Date(latest.completedAt).toLocaleDateString()}.`
+                : "No assessment has been submitted yet."}
+            </p>
+            <div className="mt-5 flex flex-wrap gap-3">
+              <ActionButton onClick={() => onSelectPatient?.(patient.id)}>
+                Open patient profile <ArrowUpRight size={16} />
+              </ActionButton>
+            </div>
+          </div>
+          <span className="alert-time">{patient.lastSeen}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function LatestAssessmentCard({ patientId, onNavigate }: { patientId: number; onNavigate: (nav: NavId) => void }) {
+  const query = trpc.assessments.listForPatient.useQuery({ patientId });
+  const latest = [...(query.data ?? [])].sort(
+    (a, b) => new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime(),
+  )[0];
+
+  return (
+    <div className="mt-7 rounded-xl border border-[#e2eae4] bg-[#f8fbf8] p-4">
+      <div className="flex items-center justify-between">
+        <span className="chart-caption">Latest assessment</span>
+        <button className="quiet-link" onClick={() => onNavigate("Assessments")}>Review all <ArrowUpRight size={14} /></button>
       </div>
+      {query.isLoading ? (
+        <p className="mt-3 animate-pulse text-xs text-[#71817d]">Loading assessment…</p>
+      ) : latest ? (
+        <div className="mt-3 flex flex-wrap items-baseline justify-between gap-2">
+          <strong className="text-sm text-[#173330]">{latest.title} · {latest.score}/{latest.maxScore}</strong>
+          <span className="text-xs text-[#71817d]">
+            {latest.severity || "recorded"} · {new Date(latest.completedAt).toLocaleDateString()}
+          </span>
+        </div>
+      ) : (
+        <p className="mt-3 text-xs text-[#71817d]">No assessment recorded for this patient yet.</p>
+      )}
     </div>
   );
 }
@@ -2015,33 +2096,87 @@ function PortalContent({ role, activeNav, onNavigate }: { role: Role; activeNav:
     return <PatientOverview onNavigate={onNavigate} />;
   }
   if (activeNav === "Patients") return <DoctorPatients />;
-  if (activeNav === "Assessments") return <DoctorAssessments />;
+  if (activeNav === "Assessments") return <DoctorAssessments onNavigate={onNavigate} />;
   if (activeNav === "Medication") return <DoctorMedication />;
   if (activeNav === "Alerts") return <DoctorAlerts onSelectPatient={() => onNavigate("Patients")} />;
   return <DoctorOverview onNavigate={onNavigate} />;
 }
 
 export default function Home() {
-  const [role, setRole] = useState<Role>("patient");
   const [language, setLanguage] = useState<Language>(getStoredLanguage);
   const { theme, toggleTheme } = useTheme();
-  const [activeNav, setActiveNav] = useState<NavId>("Overview");
   const [mobileOpen, setMobileOpen] = useState(false);
   const [showSearchModal, setShowSearchModal] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [globalSearch, setGlobalSearch] = useState("");
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
+
+  // The portal is guarded by a real session: without one you go back to /login.
+  const meQuery = trpc.auth.me.useQuery(undefined, { retry: false, refetchOnWindowFocus: false });
+  const logoutMutation = trpc.auth.logout.useMutation({
+    onSuccess: () => setLocation("/login"),
+  });
+  const user = meQuery.data ?? null;
+  const role: Role = user?.portalRole === "doctor" ? "doctor" : "patient";
+
   const navItems = role === "patient" ? patientNav : doctorNav;
   const labels = portalLabels[language];
+  const displayName = user?.name?.trim() || (role === "patient" ? "Patient" : "Clinician");
+  const firstName = displayName.split(/\s+/)[0];
+  const displayInitials = initialsOf(displayName);
+  const todayLabel = new Date().toLocaleDateString(language === "telugu" ? "te-IN" : "en-IN", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+  const greeting = `${greetingForNow(language)}, ${firstName}.`;
 
-  useEffect(() => setActiveNav("Overview"), [role]);
+  // Every section has a URL, so Back/Forward and refresh keep your place.
+  const requestedNav = navFromLocation(location);
+  const activeNav: NavId = requestedNav && canAccessSection(requestedNav, role) ? requestedNav : "Overview";
+
   useEffect(() => storeLanguage(language), [language]);
+  useEffect(() => {
+    // Wait for a settled response: a cached `null` while refetching must not
+    // bounce a freshly signed-in visitor back to the login screen.
+    if (meQuery.isPending || meQuery.isFetching) return;
+    if (!meQuery.data) {
+      const next = location.startsWith("/portal") ? `?next=${encodeURIComponent(location)}` : "";
+      setLocation(`/login${next}`, { replace: true });
+    }
+  }, [meQuery.isPending, meQuery.isFetching, meQuery.data, location, setLocation]);
+
+  // Normalise /portal and role-mismatched sections to a real section URL.
+  useEffect(() => {
+    if (!user) return;
+    if (!requestedNav || !canAccessSection(requestedNav, role)) {
+      setLocation(portalHref("Overview"), { replace: true });
+      return;
+    }
+    if (location === "/portal" || location === "/portal/") {
+      setLocation(portalHref(requestedNav), { replace: true });
+    }
+  }, [user, requestedNav, role, location, setLocation]);
 
   const navigate = (nav: NavId) => {
-    setActiveNav(nav);
+    setLocation(portalHref(nav));
     setMobileOpen(false);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
+
+  if (meQuery.isLoading) {
+    return (
+      <div className="mindsafe-app flex min-h-screen items-center justify-center">
+        <p className="animate-pulse text-sm text-[#788984]">Opening your care space…</p>
+      </div>
+    );
+  }
+
+  if (!user) {
+    // The effect above is navigating to /login; render nothing until then.
+    return null;
+  }
 
   return (
     <div className="mindsafe-app">
@@ -2049,13 +2184,11 @@ export default function Home() {
       <div className="ambient-glow ambient-glow-two" />
       <aside className={cn("app-sidebar", mobileOpen && "app-sidebar-open")}>
         <div className="sidebar-top"><Logo /><button className="sidebar-close lg:hidden" onClick={() => setMobileOpen(false)} aria-label="Close menu"><X size={19} /></button></div>
-        <div className="role-switcher" aria-label="Choose portal view">
-          <button onClick={() => setRole("patient")} className={cn(role === "patient" && "role-switch-active")}>
-            <span className="role-dot role-dot-patient" />Patient
-          </button>
-          <button onClick={() => setRole("doctor")} className={cn(role === "doctor" && "role-switch-active")}>
-            <span className="role-dot role-dot-doctor" />Doctor
-          </button>
+        <div className="role-switcher" aria-label="Current portal view">
+          <span className="role-switch-active">
+            <span className={cn("role-dot", role === "patient" ? "role-dot-patient" : "role-dot-doctor")} />
+            {role === "patient" ? "Patient" : "Doctor"}
+          </span>
         </div>
         <div className="sidebar-section-label">{role === "patient" ? labels.patientSpace : labels.careRoom}</div>
         <nav className="sidebar-nav">
@@ -2077,12 +2210,14 @@ export default function Home() {
           </div>
           <button className="sidebar-help" onClick={() => setLocation("/help")}><CircleHelp size={17} />Help centre</button>
           <div className="profile-strip">
-            <Avatar initials={role === "patient" ? "AN" : "MM"} tone={role === "patient" ? "ink" : "blue"} size="sm" />
+            <Avatar initials={displayInitials} tone={role === "patient" ? "ink" : "blue"} size="sm" />
             <div className="min-w-0 flex-1">
-              <strong>{role === "patient" ? "Ananya Nair" : "Dr. Meera Mehta"}</strong>
-              <span>{role === "patient" ? "Patient account" : "Psychiatry"}</span>
+              <strong>{displayName}</strong>
+              <span>{role === "patient" ? (user.demo ? "Demo patient account" : "Patient account") : "Clinician account"}</span>
             </div>
-            <MoreHorizontal size={17} className="text-[#9ba7a2]" />
+            <button className="icon-button" onClick={() => logoutMutation.mutate()} aria-label="Sign out" title="Sign out">
+              <LogOut size={16} />
+            </button>
           </div>
         </div>
       </aside>
@@ -2115,7 +2250,7 @@ export default function Home() {
               <span className="notification-dot" />
             </button>
             <div className="top-avatar">
-              <Avatar initials={role === "patient" ? "AN" : "MM"} tone={role === "patient" ? "ink" : "blue"} size="sm" />
+              <Avatar initials={displayInitials} tone={role === "patient" ? "ink" : "blue"} size="sm" />
             </div>
           </div>
         </header>
@@ -2139,19 +2274,21 @@ export default function Home() {
               <div className="space-y-2 max-h-60 overflow-y-auto">
                 <p className="text-[11px] font-bold uppercase text-[#8a9993]">Quick Jump</p>
                 <button
-                  onClick={() => { navigate("My Records"); setShowSearchModal(false); }}
+                  onClick={() => { navigate(role === "patient" ? "My Records" : "Patients"); setShowSearchModal(false); }}
                   className="w-full text-left p-3 rounded-xl bg-[#f8fbf8] hover:bg-[#eef5f2] border border-[#e2eae4] flex items-center justify-between text-xs font-bold text-[#173330]"
                 >
-                  <span className="flex items-center gap-2"><FileText size={16} className="text-[#39796c]" /> My Records & Doctor Prescriptions</span>
+                  <span className="flex items-center gap-2"><FileText size={16} className="text-[#39796c]" /> {role === "patient" ? "My Records & Doctor Prescriptions" : "Patient Records & Prescriptions"}</span>
                   <ChevronRight size={15} />
                 </button>
-                <button
-                  onClick={() => { navigate("Companion"); setShowSearchModal(false); }}
-                  className="w-full text-left p-3 rounded-xl bg-[#f8fbf8] hover:bg-[#eef5f2] border border-[#e2eae4] flex items-center justify-between text-xs font-bold text-[#173330]"
-                >
-                  <span className="flex items-center gap-2"><MessageCircle size={16} className="text-[#39796c]" /> MindSafe AI Companion Chat</span>
-                  <ChevronRight size={15} />
-                </button>
+                {role === "patient" && (
+                  <button
+                    onClick={() => { navigate("Companion"); setShowSearchModal(false); }}
+                    className="w-full text-left p-3 rounded-xl bg-[#f8fbf8] hover:bg-[#eef5f2] border border-[#e2eae4] flex items-center justify-between text-xs font-bold text-[#173330]"
+                  >
+                    <span className="flex items-center gap-2"><MessageCircle size={16} className="text-[#39796c]" /> MindSafe AI Companion Chat</span>
+                    <ChevronRight size={15} />
+                  </button>
+                )}
                 <button
                   onClick={() => { navigate("Assessments"); setShowSearchModal(false); }}
                   className="w-full text-left p-3 rounded-xl bg-[#f8fbf8] hover:bg-[#eef5f2] border border-[#e2eae4] flex items-center justify-between text-xs font-bold text-[#173330]"
@@ -2173,12 +2310,8 @@ export default function Home() {
             </div>
             <div className="space-y-2 text-xs">
               <div className="p-3 rounded-xl bg-[#f8fbf8] border border-[#e2eae4]">
-                <strong className="text-[#173330] block">New Prescription Added</strong>
-                <span className="text-[#71817d]">Dr. Meera Mehta prescribed Sertraline (50 mg).</span>
-              </div>
-              <div className="p-3 rounded-xl bg-[#f8fbf8] border border-[#e2eae4]">
-                <strong className="text-[#173330] block">Medical Record Verified</strong>
-                <span className="text-[#71817d]">Your uploaded document was synced with care room.</span>
+                <strong className="text-[#173330] block">You’re all caught up</strong>
+                <span className="text-[#71817d]">Notifications appear here when your care team updates a record, note, or appointment.</span>
               </div>
             </div>
           </div>
@@ -2187,8 +2320,8 @@ export default function Home() {
         <div className="page-wrap">
           <div className="page-heading">
             <div>
-              <Eyebrow>{role === "patient" ? "Sunday · September 27, 2026" : "Monday · September 28, 2026"}</Eyebrow>
-              <h1 className="page-title mt-2">{role === "patient" ? labels.greetingPatient : labels.greetingDoctor}</h1>
+              <Eyebrow>{todayLabel}</Eyebrow>
+              <h1 className="page-title mt-2">{greeting}</h1>
               <p className="page-subtitle mt-2">{role === "patient" ? labels.patientSubtitle : labels.doctorSubtitle}</p>
             </div>
             <div className="page-heading-actions">

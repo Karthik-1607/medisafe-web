@@ -4,12 +4,24 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
     <meta name="theme-color" content="#f5f7f4" />
-    <meta name="description" content="MindSafe — a softer way forward." />
+    <meta name="description" content="MindSafe — a softer way forward. One journey for mental wellbeing, another for recovery." />
     <title>MindSafe — A softer way forward</title>
+    <link rel="icon" href="/favicon.ico" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
-    <script defer src="%VITE_ANALYTICS_ENDPOINT%/umami" data-website-id="%VITE_ANALYTICS_WEBSITE_ID%"></script>
+    <script type="module">
+      const endpoint = import.meta.env.VITE_ANALYTICS_ENDPOINT;
+      const websiteId = import.meta.env.VITE_ANALYTICS_WEBSITE_ID;
+      if (endpoint && websiteId) {
+        const analyticsScript = document.createElement("script");
+        analyticsScript.defer = true;
+        analyticsScript.src = new URL("umami", endpoint.endsWith("/") ? endpoint : `${endpoint}/`).toString();
+        analyticsScript.dataset.websiteId = websiteId;
+        document.head.appendChild(analyticsScript);
+      }
+    </script>
   </body>
 </html>

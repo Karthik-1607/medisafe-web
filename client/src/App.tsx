@@ -31,7 +31,9 @@ function Router() {
   return (
     <Switch>
       <Route path="/" component={LandingPage} />
+      {/* Portal sections are real URLs so Back/Forward, refresh and links work. */}
       <Route path="/portal" component={Home} />
+      <Route path="/portal/:section" component={Home} />
       <Route path="/mental-health" component={MentalHealthRoute} />
       <Route path="/recovery" component={RecoveryRoute} />
       <Route path="/help" component={HelpRoute} />

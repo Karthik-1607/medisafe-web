@@ -2,12 +2,27 @@ import { COOKIE_NAME } from "@shared/const";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { getSessionCookieOptions } from "./_core/cookies";
+import type { SessionUser, TrpcContext } from "./_core/context";
+import {
+  AccountError,
+  createAccount,
+  createSessionToken,
+  demoSessionClaims,
+  findAccountByEmail,
+  sessionUserFromClaims,
+  verifyPassword,
+  SESSION_MAX_AGE_SECONDS,
+  type PortalRole,
+  type SessionClaims,
+} from "./_core/localAuth";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router } from "./_core/trpc";
 import { invokeLLM } from "./_core/llm";
 import {
   getAllPatients,
   getPatientById,
+  getAllAssessments,
+  getAllPrescriptionsWithItems,
   createPrescription,
   getPrescriptionsForPatient,
   createPatientRecord,
@@ -22,17 +37,41 @@ import {
 import { storagePut } from "./storage";
 
 /**
+ * Every patient-data route needs a signed-in session (password login, demo
+ * session, or OAuth). The prototype previously returned early here for
+ * anonymous callers, which meant anyone could read and write patient records
+ * without an account.
+ */
+function requireSession(ctx: TrpcContext): SessionUser {
+  if (!ctx.user) {
+    throw new TRPCError({
+      code: "UNAUTHORIZED",
+      message: "Please sign in to access patient data.",
+    });
+  }
+  return ctx.user;
+}
+
+function portalRoleOf(user: SessionUser): PortalRole {
+  if (user.portalRole) return user.portalRole;
+  // OAuth users only carry the schema-level role; admins get the clinician view.
+  return user.role === "admin" ? "doctor" : "patient";
+}
+
+/**
  * Helper to verify whether the current context user is authorized to access a specific patient's data.
  */
-function verifyPatientAccess(ctx: any, requestedPatientId: number) {
-  if (!ctx.user) return; // Allow demo/testing access when unauthenticated
-  // Admin or Doctor role can view any assigned patient
-  if (ctx.user.role === "admin" || ctx.user.role === "doctor") {
+function verifyPatientAccess(ctx: TrpcContext, requestedPatientId: number) {
+  const user = requireSession(ctx);
+
+  // Admin or clinician accounts may open any assigned patient.
+  if (portalRoleOf(user) === "doctor" || user.role === "admin") {
     return;
   }
-  // Regular patient user can only access their own patient profile
-  // In demo / single user context, patient user ID is mapped to patient ID
-  if (ctx.user.id !== requestedPatientId && requestedPatientId !== 1) {
+
+  // Patient accounts may only read their own linked profile.
+  const ownPatientId = user.patientId ?? 1;
+  if (requestedPatientId !== ownPatientId) {
     throw new TRPCError({
       code: "FORBIDDEN",
       message: "Access denied. Patients can only access their own records.",
@@ -40,10 +79,105 @@ function verifyPatientAccess(ctx: any, requestedPatientId: number) {
   }
 }
 
+/** Clinician-only views: the patient list and every-patient queries. */
+function requireClinician(ctx: TrpcContext): SessionUser {
+  const user = requireSession(ctx);
+  if (portalRoleOf(user) !== "doctor" && user.role !== "admin") {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Only clinicians can access this view.",
+    });
+  }
+  return user;
+}
+
+/** Bind a freshly issued session token to the caller's browser. */
+function setSessionCookie(ctx: TrpcContext, token: string): void {
+  ctx.res.cookie(COOKIE_NAME, token, {
+    ...getSessionCookieOptions(ctx.req),
+    // Express expects milliseconds here, while the JWT expiry is in seconds.
+    maxAge: SESSION_MAX_AGE_SECONDS * 1000,
+  });
+}
+
+async function startSession(ctx: TrpcContext, claims: SessionClaims): Promise<SessionUser> {
+  setSessionCookie(ctx, await createSessionToken(claims));
+  return sessionUserFromClaims(claims);
+}
+
 export const appRouter = router({
   system: systemRouter,
   auth: router({
     me: publicProcedure.query((opts) => opts.ctx.user),
+
+    register: publicProcedure
+      .input(
+        z.object({
+          name: z.string().trim().min(2, "Please enter your name"),
+          email: z.string().trim().email("Enter a valid email address"),
+          password: z.string().min(8, "Password must be at least 8 characters"),
+          role: z.enum(["patient", "doctor"]).default("patient"),
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        try {
+          const account = await createAccount({
+            name: input.name,
+            email: input.email,
+            password: input.password,
+            portalRole: input.role,
+          });
+          return await startSession(ctx, {
+            accountId: account.id,
+            email: account.email,
+            name: account.name,
+            portalRole: account.portalRole,
+            patientId: account.patientId,
+            demo: false,
+          });
+        } catch (err) {
+          if (err instanceof AccountError) {
+            throw new TRPCError({ code: "CONFLICT", message: err.message });
+          }
+          throw err;
+        }
+      }),
+
+    login: publicProcedure
+      .input(
+        z.object({
+          email: z.string().trim().email("Enter a valid email address"),
+          password: z.string().min(1, "Enter your password"),
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        const account = findAccountByEmail(input.email);
+        const passwordOk = account
+          ? await verifyPassword(input.password, account.passwordHash)
+          : false;
+
+        if (!account || !passwordOk) {
+          throw new TRPCError({
+            code: "UNAUTHORIZED",
+            message: "Email or password is incorrect.",
+          });
+        }
+
+        return await startSession(ctx, {
+          accountId: account.id,
+          email: account.email,
+          name: account.name,
+          portalRole: account.portalRole,
+          patientId: account.patientId,
+          demo: false,
+        });
+      }),
+
+    /** One-click demo session so the portal can be explored without an account. */
+    demo: publicProcedure.mutation(async ({ ctx }) => {
+      return await startSession(ctx, demoSessionClaims());
+    }),
+
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
@@ -55,6 +189,7 @@ export const appRouter = router({
 
   patients: router({
     list: publicProcedure.query(async ({ ctx }) => {
+      requireClinician(ctx);
       return await getAllPatients();
     }),
     getDetails: publicProcedure
@@ -106,6 +241,7 @@ export const appRouter = router({
         })
       )
       .mutation(async ({ input, ctx }) => {
+        verifyPatientAccess(ctx, input.patientId);
         const patient = await getPatientById(input.patientId);
         if (!patient) {
           throw new TRPCError({
@@ -130,6 +266,12 @@ export const appRouter = router({
         verifyPatientAccess(ctx, patientId);
         return await getPrescriptionsForPatient(patientId);
       }),
+
+    /** Clinician view: every prescription with its medicines, newest first. */
+    listAll: publicProcedure.query(async ({ ctx }) => {
+      requireClinician(ctx);
+      return await getAllPrescriptionsWithItems();
+    }),
   }),
 
   records: router({
@@ -211,6 +353,12 @@ export const appRouter = router({
         verifyPatientAccess(ctx, patientId);
         return await getAssessmentsForPatient(patientId);
       }),
+
+    /** Clinician view: every assessment across patients, newest first. */
+    listAll: publicProcedure.query(async ({ ctx }) => {
+      requireClinician(ctx);
+      return await getAllAssessments();
+    }),
   }),
 
   notes: router({
@@ -224,6 +372,7 @@ export const appRouter = router({
         })
       )
       .mutation(async ({ input, ctx }) => {
+        verifyPatientAccess(ctx, input.patientId);
         return await createClinicalNote(input);
       }),
 
@@ -274,6 +423,15 @@ export const appRouter = router({
         })
       )
       .mutation(async ({ input }) => {
+        // Honest degradation: when the model is unreachable the client is told
+        // this is a fixed notice instead of receiving canned replies that read
+        // as if a real companion had answered.
+        const degradedResponse = {
+          reply:
+            "I can't reach the companion service right now, so this is a fixed fallback notice rather than a real response. Please try again in a moment. Until then: breathe in for 4 counts, out for 4 counts, and reach out to someone you trust — or local emergency support if you feel unsafe.",
+          degraded: true,
+        } as const;
+
         try {
           const result = await invokeLLM({
             messages: [
@@ -290,20 +448,13 @@ export const appRouter = router({
           });
           const textChoice = result.choices?.[0]?.message?.content;
           if (typeof textChoice === "string" && textChoice.trim().length > 0) {
-            return textChoice;
+            return { reply: textChoice, degraded: false } as const;
           }
         } catch (err) {
-          console.warn("[AI] invokeLLM fallback active:", err);
+          console.warn("[AI] invokeLLM unavailable, returning degraded response:", err);
         }
 
-        const lastUserMsg = input.messages[input.messages.length - 1]?.content.toLowerCase() || "";
-        if (lastUserMsg.includes("telugu") || lastUserMsg.includes("అలసట") || lastUserMsg.includes("బాధ")) {
-          return "నేను ఇక్కడ మీతో ఉన్నాను. ప్రశాంతంగా ఒక్కో అడుగు వేద్దాం. మీకు ఏమనిపిస్తుందో నాతో పంచుకోవచ్చు.";
-        }
-        if (lastUserMsg.includes("heavy") || lastUserMsg.includes("tired") || lastUserMsg.includes("anxious") || lastUserMsg.includes("stress")) {
-          return "That sounds like a heavy weight to carry. Thank you for sharing that. Let's take a gentle breath together. Would it help to talk a bit more about what brought this on?";
-        }
-        return "Thank you for putting that into words. I'm right here with you. What feels like the most helpful next step for you right now?";
+        return degradedResponse;
       }),
   }),
 });
