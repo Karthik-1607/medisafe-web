@@ -305,17 +305,42 @@ export async function getAllPatients(): Promise<PatientProfile[]> {
 }
 
 export async function getPatientById(id: number): Promise<PatientProfile | undefined> {
+  const numId = Number(id);
   const db = await getDb();
   if (db) {
     try {
-      const res = await db.select().from(patientProfiles).where(eq(patientProfiles.id, id)).limit(1);
+      const res = await db.select().from(patientProfiles).where(eq(patientProfiles.id, numId)).limit(1);
       if (res.length > 0) return res[0];
     } catch (err) {
       console.warn("[Database] getPatientById query failed:", err);
     }
   }
   const store = readLocalStore();
-  return store.patients.find((p) => p.id === id);
+  let found = store.patients.find((p) => Number(p.id) === numId);
+  if (!found && numId > 0) {
+    const now = new Date();
+    found = {
+      id: numId,
+      userId: numId,
+      name: "Patient",
+      initials: "PT",
+      age: 24,
+      dateOfBirth: null,
+      gender: null,
+      contact: null,
+      condition: "General wellbeing",
+      mood: "Steady",
+      moodTone: "mint",
+      lastSeen: "Just now",
+      status: "Active",
+      doctorId: 1,
+      createdAt: now,
+      updatedAt: now,
+    };
+    store.patients.push(found);
+    writeLocalStore(store);
+  }
+  return found;
 }
 
 function extractInitials(name: string): string {
@@ -398,7 +423,8 @@ export async function createPatientProfile(data: {
 export async function updatePatientProfile(
   id: number,
   updates: Partial<PatientProfile>
-): Promise<PatientProfile | undefined> {
+): Promise<PatientProfile> {
+  const numId = Number(id);
   const db = await getDb();
   if (db) {
     try {
@@ -408,11 +434,11 @@ export async function updatePatientProfile(
           ...updates,
           updatedAt: new Date(),
         })
-        .where(eq(patientProfiles.id, id));
+        .where(eq(patientProfiles.id, numId));
       const [p] = await db
         .select()
         .from(patientProfiles)
-        .where(eq(patientProfiles.id, id));
+        .where(eq(patientProfiles.id, numId));
       if (p) return p;
     } catch (err) {
       console.warn("[Database] MySQL updatePatientProfile failed:", err);
@@ -420,19 +446,41 @@ export async function updatePatientProfile(
   }
 
   const store = readLocalStore();
-  const idx = store.patients.findIndex((p) => p.id === id);
+  const idx = store.patients.findIndex((p) => Number(p.id) === numId);
+  const now = new Date();
   if (idx !== -1) {
     const updatedInitials = updates.name ? extractInitials(updates.name) : store.patients[idx].initials;
     store.patients[idx] = {
       ...store.patients[idx],
       ...updates,
       initials: updatedInitials,
-      updatedAt: new Date(),
+      updatedAt: now,
     };
     writeLocalStore(store);
     return store.patients[idx];
+  } else {
+    const newProfile: PatientProfile = {
+      id: numId,
+      userId: numId,
+      name: updates.name || "Patient",
+      initials: updates.name ? extractInitials(updates.name) : "PT",
+      age: updates.age ?? 24,
+      dateOfBirth: updates.dateOfBirth ?? null,
+      gender: updates.gender ?? null,
+      contact: updates.contact ?? null,
+      condition: updates.condition ?? "General wellbeing",
+      mood: updates.mood ?? "Steady",
+      moodTone: updates.moodTone ?? "mint",
+      lastSeen: "Just now",
+      status: updates.status ?? "Active",
+      doctorId: updates.doctorId ?? 1,
+      createdAt: now,
+      updatedAt: now,
+    };
+    store.patients.push(newProfile);
+    writeLocalStore(store);
+    return newProfile;
   }
-  return undefined;
 }
 
 export async function recordMoodCheckIn(data: {

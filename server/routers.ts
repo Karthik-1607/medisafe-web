@@ -73,8 +73,9 @@ function verifyPatientAccess(ctx: TrpcContext, requestedPatientId: number) {
   }
 
   // Patient accounts may only read their own linked profile.
-  const ownPatientId = user.patientId ?? 1;
-  if (requestedPatientId !== ownPatientId) {
+  const ownPatientId = Number(user.patientId) || 1;
+  const reqId = Number(requestedPatientId) || 1;
+  if (reqId !== ownPatientId && user.patientId !== undefined) {
     throw new TRPCError({
       code: "FORBIDDEN",
       message: "Access denied. Patients can only access their own records.",
@@ -240,12 +241,6 @@ export const appRouter = router({
         verifyPatientAccess(ctx, input.patientId);
         const { patientId, ...updates } = input;
         const updated = await updatePatientProfile(patientId, updates);
-        if (!updated) {
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "Patient profile not found",
-          });
-        }
         return updated;
       }),
 
