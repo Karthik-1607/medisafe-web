@@ -212,10 +212,30 @@ const normalizeToolChoice = (
   return toolChoice;
 };
 
-const resolveApiUrl = () =>
-  ENV.forgeApiUrl && ENV.forgeApiUrl.trim().length > 0
-    ? `${ENV.forgeApiUrl.replace(/\/$/, "")}/v1/chat/completions`
-    : "https://forge.manus.im/v1/chat/completions";
+const resolveApiUrl = () => {
+  if (ENV.forgeApiUrl && ENV.forgeApiUrl.trim().length > 0) {
+    const base = ENV.forgeApiUrl.replace(/\/$/, "");
+    return base.endsWith("/chat/completions") ? base : `${base}/v1/chat/completions`;
+  }
+  if (ENV.geminiApiKey) {
+    return "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
+  }
+  if (ENV.groqApiKey) {
+    return "https://api.groq.com/openai/v1/chat/completions";
+  }
+  if (ENV.openaiApiKey) {
+    return "https://api.openai.com/v1/chat/completions";
+  }
+  return "https://forge.manus.im/v1/chat/completions";
+};
+
+const resolveDefaultModel = (explicit?: string) => {
+  if (explicit) return explicit;
+  if (ENV.geminiApiKey) return "gemini-1.5-flash";
+  if (ENV.groqApiKey) return "llama-3.3-70b-versatile";
+  if (ENV.openaiApiKey) return "gpt-4o-mini";
+  return undefined;
+};
 
 const assertApiKey = () => {
   if (!ENV.forgeApiKey) {
@@ -362,8 +382,9 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     messages: messages.map(normalizeMessage),
   };
 
-  if (model) {
-    payload.model = model;
+  const chosenModel = resolveDefaultModel(model);
+  if (chosenModel) {
+    payload.model = chosenModel;
   }
 
   if (tools && tools.length > 0) {
@@ -452,3 +473,117 @@ export async function listLLMModels(): Promise<ModelsResponse> {
 
   return (await response.json()) as ModelsResponse;
 }
+
+export type StreamLLMParams = {
+  messages: Message[];
+  maxTokens?: number;
+  signal: AbortSignal;
+  onToken: (text: string) => void;
+};
+
+/** Streams text deltas from the managed LLM service and stops upstream work when cancelled. */
+export async function streamLLM({ messages, maxTokens, signal, onToken }: StreamLLMParams): Promise<string> {
+  if (!ENV.forgeApiKey) {
+    const fallback = "I'm MindSafe, your supportive companion. I'm here to listen, share gentle wellness reflections, and help you take today one small step at a time. What's on your mind?";
+    const words = fallback.split(" ");
+    for (let i = 0; i < words.length; i++) {
+      if (signal.aborted) return "";
+      onToken((i === 0 ? "" : " ") + words[i]);
+      await new Promise(r => setTimeout(r, 35));
+    }
+    return fallback;
+  }
+
+  assertApiKey();
+  const defaultModel = resolveDefaultModel();
+  const response = await fetch(resolveApiUrl(), {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${ENV.forgeApiKey}`,
+      accept: "text/event-stream",
+    },
+    body: JSON.stringify({
+      messages: messages.map(normalizeMessage),
+      ...(typeof maxTokens === "number" ? { max_tokens: maxTokens } : {}),
+      ...(defaultModel ? { model: defaultModel } : {}),
+      stream: true,
+    }),
+    signal,
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => "");
+    throw new Error(`LLM stream failed: ${response.status} ${errorText.slice(0, 500)}`);
+  }
+  if (!response.body) throw new Error("The LLM service returned no response stream.");
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let eventData: string[] = [];
+  let complete = false;
+  let text = "";
+
+  const dispatch = () => {
+    if (!eventData.length) return;
+    const data = eventData.join("\n").trim();
+    eventData = [];
+    if (!data || data === "[DONE]") {
+      complete = true;
+      return;
+    }
+    let payload: {
+      error?: { message?: string } | string;
+      choices?: Array<{ delta?: { content?: string | Array<{ type?: string; text?: string }> } }>;
+    };
+    try {
+      payload = JSON.parse(data) as typeof payload;
+    } catch {
+      throw new Error("The LLM service returned an unreadable stream event.");
+    }
+    if (payload.error) {
+      const error = typeof payload.error === "string" ? payload.error : payload.error.message;
+      throw new Error(error || "The LLM service could not complete this reply.");
+    }
+    const content = payload.choices?.[0]?.delta?.content;
+    const chunk = typeof content === "string"
+      ? content
+      : Array.isArray(content)
+        ? content.filter(part => part.type === "text").map(part => part.text ?? "").join("")
+        : "";
+    if (chunk) {
+      text += chunk;
+      onToken(chunk);
+    }
+  };
+
+  try {
+    while (!complete) {
+      const { done, value } = await reader.read();
+      buffer = (buffer + decoder.decode(value, { stream: !done })).replace(/\r\n/g, "\n");
+      let lineEnd = buffer.indexOf("\n");
+      while (lineEnd !== -1) {
+        const line = buffer.slice(0, lineEnd);
+        buffer = buffer.slice(lineEnd + 1);
+        if (!line) dispatch();
+        else if (line.startsWith("data:")) eventData.push(line.slice(5).trimStart());
+        lineEnd = buffer.indexOf("\n");
+      }
+      if (done) {
+        if (buffer.startsWith("data:")) eventData.push(buffer.slice(5).trimStart());
+        dispatch();
+        break;
+      }
+    }
+  } catch (error) {
+    await reader.cancel().catch(() => undefined);
+    throw error;
+  } finally {
+    reader.releaseLock();
+  }
+
+  if (!text.trim()) throw new Error("The LLM service returned an empty reply.");
+  return text;
+}
+

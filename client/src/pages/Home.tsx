@@ -1,11 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
-
-// Set page title on mount
-useEffect(() => {
-  document.title = "MindSafe — A softer way forward";
-}, []);
 import {
   Activity,
   ArrowLeft,
@@ -44,6 +39,7 @@ import {
   Stethoscope,
   Sunrise,
   Sun,
+  User,
   Users,
   Wind,
   X,
@@ -54,6 +50,11 @@ import { getStoredLanguage, languageLabels, storeLanguage, type Language } from 
 import { useTheme } from "@/contexts/ThemeContext";
 import { trpc } from "@/lib/trpc";
 import { canAccessSection, navFromLocation, portalHref, type PortalNavId, type PortalRole } from "@/lib/portalNav";
+import { PatientOnboardingModal } from "@/components/PatientOnboardingModal";
+import { QuickCheckInModal } from "@/components/QuickCheckInModal";
+import { BreathingResetModal } from "@/components/BreathingResetModal";
+import { BreatheFlowModal } from "@/components/BreatheFlowModal";
+import { CompanionWorkspace } from "@/features/companion/CompanionWorkspace";
 
 type Role = PortalRole;
 type NavId = PortalNavId;
@@ -70,6 +71,7 @@ const patientNav: NavItem[] = [
   { label: "Wellness", icon: Sparkles },
   { label: "Care team", icon: HeartPulse },
   { label: "My Records", icon: FileText },
+  { label: "Profile", icon: User },
 ];
 
 const doctorNav: NavItem[] = [
@@ -78,6 +80,7 @@ const doctorNav: NavItem[] = [
   { label: "Assessments", icon: FileCheck2 },
   { label: "Medication", icon: Pill },
   { label: "Alerts", icon: CircleAlert },
+  { label: "Profile", icon: User },
 ];
 
 const portalLabels: Record<Language, { patient: string; clinician: string; overview: string; patientSpace: string; careRoom: string; greetingPatient: string; greetingDoctor: string; patientSubtitle: string; doctorSubtitle: string }> = {
@@ -88,8 +91,8 @@ const portalLabels: Record<Language, { patient: string; clinician: string; overv
 
 const navLabels: Record<Language, Partial<Record<NavId, string>>> = {
   english: {},
-  telugu: { Overview: "అవలోకనం", Companion: "సహచరుడు", Assessments: "అంచనాలు", Wellness: "వెల్‌నెస్", "Care team": "కేర్ టీమ్", "My Records": "నా రికార్డులు", Patients: "రోగులు", Medication: "మందులు", Alerts: "అలర్ట్‌లు" },
-  tenglish: { Overview: "Overview", Companion: "Companion", Assessments: "Assessments", Wellness: "Wellness", "Care team": "Care team", "My Records": "Mee Records", Patients: "Patients", Medication: "Medication", Alerts: "Alerts" },
+  telugu: { Overview: "అవలోకనం", Companion: "సహచరుడు", Assessments: "అంచనాలు", Wellness: "వెల్‌నెస్", "Care team": "కేర్ టీమ్", "My Records": "నా రికార్డులు", Profile: "ప్రొఫైల్", Patients: "రోగులు", Medication: "మందులు", Alerts: "అలర్ట్‌లు" },
+  tenglish: { Overview: "Overview", Companion: "Companion", Assessments: "Assessments", Wellness: "Wellness", "Care team": "Care team", "My Records": "Mee Records", Profile: "Profile", Patients: "Patients", Medication: "Medication", Alerts: "Alerts" },
 };
 
 function localizedNavLabel(label: NavId, language: Language) {
@@ -183,7 +186,97 @@ function StatCard({ icon: Icon, label, value, note, tone }: { icon: LucideIcon; 
   );
 }
 
-function PatientOverview({ onNavigate }: { onNavigate: (nav: NavId) => void }) {
+function PatientOverview({
+  onNavigate,
+  patientId,
+  patient,
+}: {
+  onNavigate: (nav: NavId) => void;
+  patientId: number;
+  patient?: any;
+}) {
+  const [showCheckInModal, setShowCheckInModal] = useState(false);
+  const [showBreathingModal, setShowBreathingModal] = useState(false);
+  const [breathingDone, setBreathingDone] = useState(false);
+
+  const assessmentsQuery = trpc.assessments.listForPatient.useQuery({ patientId });
+  const assessments = assessmentsQuery.data || [];
+
+  const checkIns = assessments.filter(
+    (a) => a.type === "Daily Check-in" || a.type === "PHQ-9" || a.type === "GAD-7"
+  );
+
+  const todayStr = new Date().toDateString();
+  const checkedInToday = checkIns.some(
+    (c) => new Date(c.completedAt).toDateString() === todayStr
+  );
+  const latestCheckIn = checkIns[0];
+
+  const uniqueDates = Array.from(
+    new Set(checkIns.map((c) => new Date(c.completedAt).toDateString()))
+  );
+  const streakCount = uniqueDates.length;
+
+  const streakValue =
+    streakCount === 0
+      ? "Day 1"
+      : `${streakCount.toString().padStart(2, "0")} day${streakCount > 1 ? "s" : ""}`;
+  const streakNote =
+    streakCount === 0 ? "start your journey" : checkedInToday ? "completed today" : "ready for today";
+
+  const moodValue =
+    checkIns.length === 0
+      ? "No check-ins yet"
+      : latestCheckIn?.severity || patient?.mood || "Steady";
+  const moodNote =
+    checkIns.length === 0
+      ? "tap below to begin"
+      : latestCheckIn
+      ? `last: ${new Date(latestCheckIn.completedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+      : "recent";
+
+  const tasksCompleted = (checkedInToday ? 1 : 0) + (breathingDone ? 1 : 0);
+
+  // Build chart points from actual check-ins / assessments (up to last 7)
+  const chartPoints = [...checkIns]
+    .slice(0, 7)
+    .reverse()
+    .map((c, i, arr) => {
+      let lightness = 50;
+      if (c.type === "Daily Check-in") {
+        lightness = (c.score / 5) * 100;
+      } else {
+        lightness = Math.max(10, Math.min(90, 100 - (c.score / (c.maxScore || 27)) * 100));
+      }
+      const x = arr.length === 1 ? 380 : 40 + (i / (arr.length - 1)) * 680;
+      const y = Math.round(180 - (lightness / 100) * 130);
+      return {
+        x,
+        y,
+        label: new Date(c.completedAt).toLocaleDateString(undefined, {
+          month: "short",
+          day: "numeric",
+        }),
+        title: c.title,
+        severity: c.severity,
+      };
+    });
+
+  let pathD = "";
+  let areaD = "";
+  if (chartPoints.length > 1) {
+    pathD = `M ${chartPoints[0].x} ${chartPoints[0].y}`;
+    for (let i = 1; i < chartPoints.length; i++) {
+      const prev = chartPoints[i - 1];
+      const curr = chartPoints[i];
+      const cx1 = prev.x + (curr.x - prev.x) / 2;
+      const cx2 = cx1;
+      pathD += ` C ${cx1} ${prev.y}, ${cx2} ${curr.y}, ${curr.x} ${curr.y}`;
+    }
+    const lastPoint = chartPoints[chartPoints.length - 1];
+    areaD = `${pathD} L ${lastPoint.x} 220 L ${chartPoints[0].x} 220 Z`;
+  }
+
   return (
     <div className="space-y-8">
       <section className="hero-shell overflow-hidden">
@@ -211,9 +304,15 @@ function PatientOverview({ onNavigate }: { onNavigate: (nav: NavId) => void }) {
       </section>
 
       <section className="grid gap-4 md:grid-cols-3">
-        <StatCard icon={Sunrise} label="Gentle streak" value="04 days" note="keep going" tone="mint" />
-        <StatCard icon={LineChart} label="Mood this week" value="+18%" note="a little lighter" tone="blue" />
-        <StatCard icon={Clock3} label="Companion time" value="1h 42m" note="of 2h today" tone="sand" />
+        <StatCard icon={Sunrise} label="Gentle streak" value={streakValue} note={streakNote} tone="mint" />
+        <StatCard icon={LineChart} label="Current state" value={moodValue} note={moodNote} tone="blue" />
+        <StatCard
+          icon={Clock3}
+          label="Care team status"
+          value={patient?.condition ? "Connected" : "Intake pending"}
+          note={patient?.doctorId ? "Supervised by Dr. Mehta" : "Clinician assigned"}
+          tone="sand"
+        />
       </section>
 
       <section className="grid gap-5 xl:grid-cols-[1.55fr_.85fr]">
@@ -221,41 +320,146 @@ function PatientOverview({ onNavigate }: { onNavigate: (nav: NavId) => void }) {
           <div className="flex items-start justify-between gap-4">
             <div>
               <Eyebrow>Your progress</Eyebrow>
-              <h2 className="section-title mt-1">A little more space to breathe.</h2>
-              <p className="muted-copy mt-1">Your mood has been gently trending upward.</p>
+              <h2 className="section-title mt-1">
+                {checkIns.length > 0 ? "A little more space to breathe." : "Your emotional trajectory map."}
+              </h2>
+              <p className="muted-copy mt-1">
+                {checkIns.length > 0
+                  ? "Real-time mood & clinical check-ins logged to your profile."
+                  : "Track your emotions day by day as you check in."}
+              </p>
             </div>
-            <button className="select-pill">Last 30 days <ChevronRight size={14} /></button>
+            {checkIns.length > 0 && (
+              <button onClick={() => setShowCheckInModal(true)} className="select-pill flex items-center gap-1.5 cursor-pointer">
+                <Plus size={13} /> Check in
+              </button>
+            )}
           </div>
-          <div className="chart-wrap mt-8">
-            <div className="chart-y-labels"><span>lighter</span><span>steady</span><span>heavier</span></div>
-            <svg className="mood-chart" viewBox="0 0 760 220" role="img" aria-label="Mood trend chart">
-              <defs>
-                <linearGradient id="moodFill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#9ccdc2" stopOpacity="0.42" />
-                  <stop offset="100%" stopColor="#9ccdc2" stopOpacity="0" />
-                </linearGradient>
-              </defs>
-              <g className="chart-grid"><line x1="0" y1="20" x2="760" y2="20" /><line x1="0" y1="105" x2="760" y2="105" /><line x1="0" y1="190" x2="760" y2="190" /></g>
-              <path className="chart-area" d="M0 171 C65 175 75 145 130 152 S195 116 245 137 S300 128 347 112 S405 147 456 116 S520 111 555 87 S610 94 655 58 S715 75 760 35 L760 220 L0 220 Z" fill="url(#moodFill)" />
-              <path className="chart-line" d="M0 171 C65 175 75 145 130 152 S195 116 245 137 S300 128 347 112 S405 147 456 116 S520 111 555 87 S610 94 655 58 S715 75 760 35" />
-              <circle cx="655" cy="58" r="5" className="chart-point" /><circle cx="655" cy="58" r="11" className="chart-point-halo" />
-            </svg>
-            <div className="chart-x-labels"><span>Sep 01</span><span>Sep 08</span><span>Sep 15</span><span>Sep 22</span><span>Today</span></div>
+
+          {checkIns.length === 0 ? (
+            <div className="my-8 rounded-2xl bg-[#f8fbf9] border border-dashed border-[#cbe1d8] p-8 text-center space-y-3">
+              <div className="mx-auto w-12 h-12 rounded-full bg-[#e3f0eb] text-[#2c6e61] flex items-center justify-center">
+                <LineChart size={22} />
+              </div>
+              <h3 className="text-sm font-bold text-[#173330]">No emotional check-ins recorded yet</h3>
+              <p className="text-xs text-[#6e807b] max-w-sm mx-auto">
+                As you record your daily mood or complete clinical screenings, your personal trajectory will map here.
+              </p>
+              <button
+                type="button"
+                onClick={() => setShowCheckInModal(true)}
+                className="action-button inline-flex items-center gap-1.5 text-xs mt-2"
+              >
+                <Plus size={14} /> Log your first check-in
+              </button>
+            </div>
+          ) : (
+            <div className="chart-wrap mt-8">
+              <div className="chart-y-labels"><span>lighter</span><span>steady</span><span>heavier</span></div>
+              <svg className="mood-chart" viewBox="0 0 760 220" role="img" aria-label="Mood trend chart">
+                <defs>
+                  <linearGradient id="moodFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#9ccdc2" stopOpacity="0.42" />
+                    <stop offset="100%" stopColor="#9ccdc2" stopOpacity="0" />
+                  </linearGradient>
+                </defs>
+                <g className="chart-grid">
+                  <line x1="0" y1="20" x2="760" y2="20" />
+                  <line x1="0" y1="105" x2="760" y2="105" />
+                  <line x1="0" y1="190" x2="760" y2="190" />
+                </g>
+                {areaD && <path className="chart-area" d={areaD} fill="url(#moodFill)" />}
+                {pathD && <path className="chart-line" d={pathD} />}
+                {chartPoints.map((pt, i) => (
+                  <g key={i}>
+                    <circle cx={pt.x} cy={pt.y} r="5" className="chart-point" />
+                    <circle cx={pt.x} cy={pt.y} r="11" className="chart-point-halo" />
+                  </g>
+                ))}
+              </svg>
+              <div className="chart-x-labels">
+                {chartPoints.map((pt, i) => (
+                  <span key={i}>{pt.label}</span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="mt-7 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-[#e7ebe5] pt-4 text-xs text-[#71817d]">
+            <span className="legend"><i className="legend-dot bg-[#79b8ad]" /> Daily check-ins</span>
+            <span className="legend"><i className="legend-dot bg-[#d9b88c]" /> Clinical assessments</span>
+            <span className="ml-auto font-semibold text-[#39766d]">
+              {checkIns.length} total check-in{checkIns.length === 1 ? "" : "s"}
+            </span>
           </div>
-          <div className="mt-7 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-[#e7ebe5] pt-4 text-xs text-[#71817d]"><span className="legend"><i className="legend-dot bg-[#79b8ad]" /> Mood check-ins</span><span className="legend"><i className="legend-dot bg-[#d9b88c]" /> Companion sessions</span><span className="ml-auto font-semibold text-[#39766d]">+18% from last month</span></div>
         </div>
 
         <div className="surface-card path-card">
-          <div className="flex items-start justify-between"><div><Eyebrow>For your path</Eyebrow><h2 className="section-title mt-1">Three small things.</h2></div><div className="mini-spark"><Sparkles size={15} /></div></div>
+          <div className="flex items-start justify-between">
+            <div>
+              <Eyebrow>For your path</Eyebrow>
+              <h2 className="section-title mt-1">Three small things.</h2>
+            </div>
+            <div className="mini-spark"><Sparkles size={15} /></div>
+          </div>
           <p className="muted-copy mt-2">No perfect days required. Just a little showing up.</p>
           <div className="mt-7 space-y-2">
-            <button onClick={() => toast.success("Check-in marked complete") } className="path-row path-row-done"><span className="path-check"><Check size={13} /></span><span><strong>Morning check-in</strong><small>Completed at 8:12 AM</small></span><span className="path-state">done</span></button>
-            <button onClick={() => onNavigate("Companion")} className="path-row"><span className="path-number">2</span><span><strong>Talk for five minutes</strong><small>A gentle space to unload</small></span><ChevronRight size={16} className="ml-auto text-[#9aa9a4]" /></button>
-            <button onClick={() => onNavigate("Wellness")} className="path-row"><span className="path-number">3</span><span><strong>Take a quiet pause</strong><small>Try a 3-minute breathing reset</small></span><ChevronRight size={16} className="ml-auto text-[#9aa9a4]" /></button>
+            <button
+              onClick={() => setShowCheckInModal(true)}
+              className={cn("path-row text-left w-full cursor-pointer", checkedInToday && "path-row-done")}
+            >
+              <span className="path-check">{checkedInToday ? <Check size={13} /> : "1"}</span>
+              <span>
+                <strong>Daily mood check-in</strong>
+                <small>
+                  {checkedInToday
+                    ? `Completed today · feeling ${latestCheckIn?.severity || "Steady"}`
+                    : "Notice what’s here without judgment"}
+                </small>
+              </span>
+              <span className="path-state">{checkedInToday ? "done" : "start"}</span>
+            </button>
+            <button onClick={() => onNavigate("Companion")} className="path-row text-left w-full cursor-pointer">
+              <span className="path-number">2</span>
+              <span><strong>Talk for five minutes</strong><small>A gentle space with your AI companion</small></span>
+              <ChevronRight size={16} className="ml-auto text-[#9aa9a4]" />
+            </button>
+            <button
+              onClick={() => setShowBreathingModal(true)}
+              className={cn("path-row text-left w-full cursor-pointer", breathingDone && "path-row-done")}
+            >
+              <span className="path-check">{breathingDone ? <Check size={13} /> : "3"}</span>
+              <span>
+                <strong>Start meditation & quiet breath</strong>
+                <small>{breathingDone ? "Guided meditation session completed" : "Try a 3-minute BreatheFlow guided meditation"}</small>
+              </span>
+              <span className="path-state">{breathingDone ? "done" : "start"}</span>
+            </button>
           </div>
-          <div className="path-footer"><span className="path-progress"><i /></span><span>1 of 3 complete</span></div>
+          <div className="path-footer">
+            <span className="path-progress"><i style={{ width: `${(tasksCompleted / 3) * 100}%` }} /></span>
+            <span>{tasksCompleted} of 3 complete</span>
+          </div>
         </div>
       </section>
+
+      {/* Quick Check-In Modal */}
+      <QuickCheckInModal
+        isOpen={showCheckInModal}
+        onClose={() => setShowCheckInModal(false)}
+        patientId={patientId}
+        onSuccess={() => assessmentsQuery.refetch()}
+      />
+
+      {/* BreatheFlow Guided Meditation Modal */}
+      <BreatheFlowModal
+        isOpen={showBreathingModal}
+        onClose={() => setShowBreathingModal(false)}
+        onComplete={() => {
+          setBreathingDone(true);
+          toast.success("Meditation session completed! You gave yourself a quieter minute.");
+        }}
+      />
 
       <section>
         <SectionHeading eyebrow="Continue gently" title="Made for this moment" detail="A few places to begin, depending on what you need today." action={<button onClick={() => onNavigate("Wellness")} className="quiet-link">See all <ArrowUpRight size={15} /></button>} />
@@ -270,210 +474,14 @@ function PatientOverview({ onNavigate }: { onNavigate: (nav: NavId) => void }) {
 }
 
 function PatientCompanion() {
-  const meQuery = trpc.auth.me.useQuery(undefined, { retry: false, refetchOnWindowFocus: false });
-  const firstName = meQuery.data?.name?.trim().split(/\s+/)[0] || "there";
-  const patientInitials = initialsOf(meQuery.data?.name || "You");
-
-  const [draft, setDraft] = useState("");
-  const [messages, setMessages] = useState<Array<{ from: "companion" | "patient"; text: string; degraded?: boolean }>>(() => [
-    { from: "companion", text: `Hi ${firstName}. I’m here with you. What feels most present today?` },
-  ]);
-  const [listening, setListening] = useState(false);
-  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
-
-  // The session intention is a real save: it survives reloads.
-  const [sessionIntention, setSessionIntention] = useState<string>(() => {
-    try {
-      return localStorage.getItem(INTENTION_STORAGE_KEY) ?? "";
-    } catch {
-      return "";
-    }
-  });
-  const [intentionSaved, setIntentionSaved] = useState(() => Boolean(sessionIntention));
-
-  const aiChatMutation = trpc.ai.chat.useMutation();
-
-  const toggleVoiceInput = () => {
-    const SpeechRecognitionCtor =
-      (window as unknown as { SpeechRecognition?: unknown; webkitSpeechRecognition?: unknown }).SpeechRecognition ||
-      (window as unknown as { webkitSpeechRecognition?: unknown }).webkitSpeechRecognition;
-
-    if (!SpeechRecognitionCtor) {
-      toast.info("Voice input isn't supported in this browser — type your message instead.");
-      return;
-    }
-
-    if (listening) {
-      recognitionRef.current?.stop();
-      return;
-    }
-
-    const recognition = new (SpeechRecognitionCtor as new () => SpeechRecognitionLike)();
-    recognition.lang = getStoredLanguage() === "telugu" ? "te-IN" : "en-IN";
-    recognition.interimResults = false;
-    recognition.onresult = (event) => {
-      const transcript = event.results?.[0]?.[0]?.transcript ?? "";
-      if (transcript) setDraft((prev) => (prev ? `${prev} ${transcript}` : transcript));
-    };
-    recognition.onerror = () => {
-      setListening(false);
-      toast.error("I couldn't hear that. Please try again.");
-    };
-    recognition.onend = () => setListening(false);
-    recognitionRef.current = recognition;
-    setListening(true);
-    recognition.start();
-  };
-
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    if (!draft.trim() || aiChatMutation.isPending) return;
-
-    const userText = draft.trim();
-    const updatedMessages = [...messages, { from: "patient" as const, text: userText }];
-    setMessages(updatedMessages);
-    setDraft("");
-
-    try {
-      const formattedForAi = updatedMessages.map((m) => ({
-        role: m.from === "patient" ? ("user" as const) : ("assistant" as const),
-        content: m.text,
-      }));
-      const { reply, degraded } = await aiChatMutation.mutateAsync({ messages: formattedForAi });
-      setMessages((prev) => [...prev, { from: "companion", text: reply, degraded }]);
-      if (degraded) {
-        toast.error("The companion service is unreachable — that reply was a fixed fallback notice.");
-      }
-    } catch (err) {
-      setMessages((prev) => [
-        ...prev,
-        { from: "companion", degraded: true, text: "The companion service can't be reached right now, so no real reply was generated. Please try again in a moment." },
-      ]);
-      toast.error("The companion service is unreachable.");
-    }
-  };
-
   return (
-    <div className="grid gap-5 xl:grid-cols-[1.35fr_.65fr]">
-      <section className="surface-card companion-card">
-        <div className="flex items-center justify-between border-b border-[#e7ebe5] pb-5">
-          <div className="flex items-center gap-3">
-            <div className="companion-mini-orb"><Sparkles size={16} /></div>
-            <div>
-              <p className="font-semibold text-[#173330]">Your companion</p>
-              <p className="text-xs text-[#788984]">A private, supportive space</p>
-            </div>
-          </div>
-          <span className="privacy-pill"><LockKeyhole size={12} /> private</span>
-        </div>
-        <div className="chat-space">
-          <div className="session-date"><span /> {new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })} <span /></div>
-          {messages.map((message, index) => (
-            <div key={`${message.from}-${index}`} className={cn("chat-row", message.from === "patient" && "chat-row-patient")}>
-              <div className={cn("chat-avatar", message.from === "patient" ? "chat-avatar-patient" : "chat-avatar-companion")}>
-                {message.from === "patient" ? patientInitials : <Sparkles size={14} />}
-              </div>
-              <div className={cn("chat-bubble", message.from === "patient" ? "chat-bubble-patient" : "chat-bubble-companion", message.degraded && "text-xs italic text-[#71817d]")}>
-                {message.degraded && <span className="not-italic font-semibold">Offline notice: </span>}
-                {message.text}
-              </div>
-            </div>
-          ))}
-          {aiChatMutation.isPending && (
-            <div className="chat-row">
-              <div className="chat-avatar chat-avatar-companion"><Sparkles size={14} /></div>
-              <div className="chat-bubble chat-bubble-companion text-xs text-[#71817d] animate-pulse">
-                MindSafe companion is thinking...
-              </div>
-            </div>
-          )}
-        </div>
-        <form onSubmit={submit} className="chat-composer">
-          <button
-            type="button"
-            className={cn("composer-icon", listening && "text-[#b3452f]")}
-            onClick={toggleVoiceInput}
-            aria-label={listening ? "Stop voice input" : "Start voice input"}
-            title={listening ? "Stop voice input" : "Speak your message"}
-          >
-            <Mic size={18} className={listening ? "animate-pulse" : ""} />
-          </button>
-          <input
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            placeholder="Write what’s on your mind…"
-            aria-label="Message your companion"
-            disabled={aiChatMutation.isPending}
-          />
-          <button className="send-button" type="submit" disabled={aiChatMutation.isPending}>
-            <ArrowUpRight size={18} />
-          </button>
-        </form>
-        <div className="mt-3 flex items-center justify-between text-[11px] text-[#8b9a95]">
-          <span>Companion responses are supportive, not medical advice.</span>
-          <span>{messages.length} message{messages.length === 1 ? "" : "s"} this session</span>
-        </div>
-      </section>
-      <aside className="space-y-5">
-        <div className="soft-panel soft-panel-blue">
-          <div className="flex items-start justify-between">
-            <div>
-              <Eyebrow>Session intention</Eyebrow>
-              <h3 className="panel-title mt-1">You don’t have to solve it all.</h3>
-            </div>
-            <CircleHelp size={18} className="text-[#5b8e99]" />
-          </div>
-          <p className="muted-copy mt-3">Try naming one thing you can gently set down for tonight.</p>
-          <input
-            type="text"
-            value={sessionIntention}
-            onChange={(e) => { setSessionIntention(e.target.value); setIntentionSaved(false); }}
-            placeholder="e.g. Setting aside work worries until morning..."
-            className="mt-3 w-full rounded-lg border border-[#cbe1dc] bg-[#ffffff] px-3 py-2 text-xs text-[#173330] focus:outline-none"
-          />
-          <button
-            className="panel-action mt-3"
-            onClick={() => {
-              const value = sessionIntention.trim();
-              try {
-                if (value) localStorage.setItem(INTENTION_STORAGE_KEY, value);
-                else localStorage.removeItem(INTENTION_STORAGE_KEY);
-              } catch {
-                // Storage can be unavailable in private modes; the session
-                // state below still reflects the save for this visit.
-              }
-              setIntentionSaved(true);
-              toast.success(value ? `Intention saved: "${value}"` : "Intention cleared for this session");
-            }}
-          >
-            {intentionSaved ? "✓ Intention saved" : "Save intention"} <ArrowUpRight size={15} />
-          </button>
-        </div>
-        <div className="surface-card">
-          <div className="flex items-center justify-between">
-            <div>
-              <Eyebrow>Recent sessions</Eyebrow>
-              <h3 className="panel-title mt-1">A small record of showing up.</h3>
-            </div>
-            <MoreHorizontal size={18} className="text-[#9aa8a3]" />
-          </div>
-          <div className="mt-5 space-y-3">
-            <div className="recent-session w-full text-left">
-              <span className="recent-session-icon"><MessageCircle size={15} /></span>
-              <span>
-                <strong>No saved sessions yet</strong>
-                <small>Sessions are not stored — only your assessments, notes, and records are saved.</small>
-              </span>
-            </div>
-          </div>
-        </div>
-      </aside>
+    <div className="pt-1">
+      <CompanionWorkspace />
     </div>
   );
 }
 
-function PatientAssessments() {
-  const patientId = 1;
+function PatientAssessments({ patientId = 1 }: { patientId?: number }) {
   const assessmentsQuery = trpc.assessments.listForPatient.useQuery({ patientId });
   const submitMutation = trpc.assessments.submit.useMutation();
 
@@ -614,10 +622,10 @@ function PatientAssessments() {
       </div>
 
       {/* Completed History */}
-      {completedList.length > 0 && (
-        <div className="surface-card p-6 space-y-4">
-          <Eyebrow>Check-in History</Eyebrow>
-          <h3 className="section-title">Submitted Assessments</h3>
+      <div className="surface-card p-6 space-y-4">
+        <Eyebrow>Check-in History</Eyebrow>
+        <h3 className="section-title">Submitted Assessments</h3>
+        {completedList.length > 0 ? (
           <div className="grid gap-3">
             {completedList.map((a) => (
               <div key={a.id} className="rounded-xl bg-[#f8fbf8] p-4 border border-[#e1eae3] flex items-center justify-between">
@@ -631,8 +639,12 @@ function PatientAssessments() {
               </div>
             ))}
           </div>
-        </div>
-      )}
+        ) : (
+          <p className="text-xs text-[#71817d] bg-[#f8fbf8] p-4 rounded-xl border border-[#e1eae3]">
+            No assessments completed yet. Complete your first PHQ-9 or GAD-7 check-in above to start recording your clinical history.
+          </p>
+        )}
+      </div>
 
       {/* Assessment Question Modal */}
       {activeModal && (
@@ -700,31 +712,8 @@ function PatientAssessments() {
 
 function PatientWellness() {
   const [showBreathingModal, setShowBreathingModal] = useState(false);
-  const [breathingStep, setBreathingStep] = useState<"Inhale" | "Hold" | "Exhale" | "Rest">("Inhale");
-  const [breathingCounter, setBreathingCounter] = useState(4);
   const [activeResource, setActiveResource] = useState<{ title: string; type: string; content: string } | null>(null);
   const [savedNotes, setSavedNotes] = useState<string[]>([]);
-
-  useEffect(() => {
-    let timer: NodeJS.Timeout;
-    if (showBreathingModal) {
-      timer = setInterval(() => {
-        setBreathingCounter((prev) => {
-          if (prev <= 1) {
-            setBreathingStep((step) => {
-              if (step === "Inhale") return "Hold";
-              if (step === "Hold") return "Exhale";
-              if (step === "Exhale") return "Rest";
-              return "Inhale";
-            });
-            return 4;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    }
-    return () => clearInterval(timer);
-  }, [showBreathingModal]);
 
   const handleSaveQuote = () => {
     const quote = "You can be a work in progress and still be worthy of care today.";
@@ -761,8 +750,8 @@ function PatientWellness() {
             <span className="feature-kicker">Guided practice · 03 min</span>
             <h3 className="display-small mt-2">A quiet reset<br /><em>for right now.</em></h3>
             <p className="muted-copy mt-3 max-w-md">A short breathing practice for when your thoughts are moving faster than you are.</p>
-            <button className="dark-action mt-6" onClick={() => { setShowBreathingModal(true); setBreathingStep("Inhale"); setBreathingCounter(4); }}>
-              Start practice <Play size={15} fill="currentColor" />
+            <button className="dark-action mt-6" onClick={() => setShowBreathingModal(true)}>
+              Start meditation <Play size={15} fill="currentColor" />
             </button>
           </div>
         </div>
@@ -817,35 +806,14 @@ function PatientWellness() {
         </div>
       </div>
 
-      {/* Breathing Exercise Modal */}
-      {showBreathingModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-          <div className="bg-[#ffffff] rounded-2xl max-w-md w-full p-8 shadow-xl border border-[#e2eae4] text-center space-y-6">
-            <div className="flex justify-end">
-              <button onClick={() => setShowBreathingModal(false)} className="icon-button"><X size={18} /></button>
-            </div>
-            <span className="hero-kicker mx-auto"><Wind size={16} /> 3-Minute Reset</span>
-            <div className="my-8 flex flex-col items-center justify-center">
-              <div className="w-36 h-36 rounded-full bg-[#e2f0ea] border-4 border-[#39796c] flex items-center justify-center shadow-inner animate-pulse">
-                <span className="text-3xl font-extrabold text-[#173330]">{breathingCounter}s</span>
-              </div>
-              <h3 className="text-2xl font-bold text-[#173330] mt-6 uppercase tracking-wider">{breathingStep}</h3>
-              <p className="muted-copy mt-2 text-xs">
-                {breathingStep === "Inhale"
-                  ? "Breathe in deeply through your nose..."
-                  : breathingStep === "Hold"
-                  ? "Hold your breath gently..."
-                  : breathingStep === "Exhale"
-                  ? "Slowly release through your mouth..."
-                  : "Rest for a moment before repeating..."}
-              </p>
-            </div>
-            <ActionButton onClick={() => { setShowBreathingModal(false); toast.success("Breathing reset complete. You did great."); }}>
-              Finish Exercise <Check size={16} />
-            </ActionButton>
-          </div>
-        </div>
-      )}
+      {/* BreatheFlow Guided Meditation Modal */}
+      <BreatheFlowModal
+        isOpen={showBreathingModal}
+        onClose={() => setShowBreathingModal(false)}
+        onComplete={() => {
+          toast.success("Meditation session complete. You gave yourself a quieter minute.");
+        }}
+      />
 
       {/* Resource Reader Modal */}
       {activeResource && (
@@ -873,7 +841,7 @@ function PatientWellness() {
   );
 }
 
-function PatientCareTeam() {
+function PatientCareTeam({ patientId = 1, patient }: { patientId?: number; patient?: any }) {
   const [, setLocation] = useLocation();
   const [showMessageModal, setShowMessageModal] = useState(false);
   const [showApptModal, setShowApptModal] = useState(false);
@@ -881,6 +849,21 @@ function PatientCareTeam() {
   const [apptDate, setApptDate] = useState("2026-10-05");
   const [apptTime, setApptTime] = useState("10:30 AM");
   const [apptReason, setApptReason] = useState("");
+
+  const doctorId = patient?.doctorId || 1;
+  const doctorName =
+    doctorId === 2
+      ? "Dr. Rajesh Sharma"
+      : doctorId === 3
+      ? "Dr. Ananya Roy"
+      : "Dr. Meera Mehta";
+  const doctorSpecialty =
+    doctorId === 2
+      ? "Clinical Psychology · MindSafe Care"
+      : doctorId === 3
+      ? "Behavioral Health · MindSafe Care"
+      : "Psychiatry · MindSafe Care";
+  const doctorInitials = doctorId === 2 ? "RS" : doctorId === 3 ? "AR" : "MM";
 
   const createNoteMutation = trpc.notes.create.useMutation();
   const createApptMutation = trpc.appointments.create.useMutation();
@@ -890,12 +873,12 @@ function PatientCareTeam() {
     if (!messageText.trim()) return;
     try {
       await createNoteMutation.mutateAsync({
-        patientId: 1,
-        doctorId: 1,
-        doctorName: "Dr. Meera Mehta",
+        patientId,
+        doctorId,
+        doctorName,
         note: `[Patient Message]: ${messageText.trim()}`,
       });
-      toast.success("Message sent securely to Dr. Meera Mehta.");
+      toast.success(`Message sent securely to ${doctorName}.`);
       setMessageText("");
       setShowMessageModal(false);
     } catch (err: any) {
@@ -907,14 +890,14 @@ function PatientCareTeam() {
     e.preventDefault();
     try {
       await createApptMutation.mutateAsync({
-        patientId: 1,
-        doctorId: 1,
-        doctorName: "Dr. Meera Mehta",
+        patientId,
+        doctorId,
+        doctorName,
         date: apptDate,
         time: apptTime,
         reason: apptReason.trim() || "Regular follow-up session",
       });
-      toast.success(`Appointment booked with Dr. Mehta for ${apptDate} at ${apptTime}!`);
+      toast.success(`Appointment booked with ${doctorName} for ${apptDate} at ${apptTime}!`);
       setShowApptModal(false);
     } catch (err: any) {
       toast.error(err?.message || "Failed to book appointment.");
@@ -929,10 +912,10 @@ function PatientCareTeam() {
           <div className="flex items-start justify-between">
             <div>
               <Eyebrow>Your doctor</Eyebrow>
-              <h3 className="panel-title mt-1">Dr. Meera Mehta</h3>
-              <p className="muted-copy mt-1">Psychiatry · MindSafe Care</p>
+              <h3 className="panel-title mt-1">{doctorName}</h3>
+              <p className="muted-copy mt-1">{doctorSpecialty}</p>
             </div>
-            <Avatar initials="MM" tone="blue" size="lg" />
+            <Avatar initials={doctorInitials} tone="blue" size="lg" />
           </div>
           <div className="mt-7 grid grid-cols-2 gap-3">
             <button onClick={() => setShowMessageModal(true)} className="care-action">
@@ -975,7 +958,7 @@ function PatientCareTeam() {
             <div className="flex items-start justify-between border-b border-[#e7ebe5] pb-3">
               <div>
                 <Eyebrow>Secure Communication</Eyebrow>
-                <h3 className="section-title mt-1">Message Dr. Meera Mehta</h3>
+                <h3 className="section-title mt-1">Message {doctorName}</h3>
               </div>
               <button onClick={() => setShowMessageModal(false)} className="icon-button"><X size={18} /></button>
             </div>
@@ -985,7 +968,7 @@ function PatientCareTeam() {
                 onChange={(e) => setMessageText(e.target.value)}
                 rows={4}
                 required
-                placeholder="Write your message or question for Dr. Mehta..."
+                placeholder={`Write your message or question for ${doctorName}...`}
                 className="w-full px-3 py-2 text-xs border border-[#dce7df] rounded-lg bg-[#f8fbf8] text-[#173330] focus:outline-none"
               />
               <div className="flex items-center justify-end gap-3">
@@ -1053,8 +1036,7 @@ function PatientCareTeam() {
   );
 }
 
-function PatientMyRecords() {
-  const patientId = 1;
+function PatientMyRecords({ patientId = 1 }: { patientId?: number }) {
   const prescriptionsQuery = trpc.prescriptions.listForPatient.useQuery({ patientId });
   const recordsQuery = trpc.records.listForPatient.useQuery({ patientId });
   const uploadMutation = trpc.records.upload.useMutation();
@@ -1289,6 +1271,286 @@ function PatientMyRecords() {
           </div>
         )}
       </section>
+    </div>
+  );
+}
+
+function PatientProfileView({
+  patientId,
+  patient,
+  user,
+  onProfileUpdated,
+}: {
+  patientId: number;
+  patient?: any;
+  user?: any;
+  onProfileUpdated?: () => void;
+}) {
+  const updateProfileMutation = trpc.patients.updateProfile.useMutation();
+
+  const [name, setName] = useState(patient?.name || user?.name || "");
+  const [age, setAge] = useState<number>(patient?.age || 24);
+  const [dateOfBirth, setDateOfBirth] = useState(patient?.dateOfBirth || "2002-04-12");
+  const [gender, setGender] = useState(patient?.gender || "Female");
+  const [contact, setContact] = useState(patient?.contact || "");
+  const [condition, setCondition] = useState(patient?.condition || "General mental health support");
+  const [doctorId, setDoctorId] = useState<number>(patient?.doctorId || 1);
+  const [emergencyContact, setEmergencyContact] = useState("");
+  const [allergies, setAllergies] = useState("None reported");
+  const [bloodGroup, setBloodGroup] = useState("B+");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (patient) {
+      if (patient.name) setName(patient.name);
+      if (patient.age) setAge(patient.age);
+      if (patient.dateOfBirth) setDateOfBirth(patient.dateOfBirth);
+      if (patient.gender) setGender(patient.gender);
+      if (patient.contact) setContact(patient.contact);
+      if (patient.condition) setCondition(patient.condition);
+      if (patient.doctorId) setDoctorId(patient.doctorId);
+    }
+  }, [patient]);
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await updateProfileMutation.mutateAsync({
+        patientId,
+        name: name.trim() || undefined,
+        age: Number(age) || 0,
+        dateOfBirth,
+        gender,
+        contact: contact.trim() || undefined,
+        condition: condition.trim() || undefined,
+        doctorId,
+      });
+      toast.success("Medical profile updated and synced securely with care team!");
+      if (onProfileUpdated) {
+        onProfileUpdated();
+      }
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to update profile");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const assignedDoctor =
+    doctorId === 2
+      ? "Dr. Rajesh Sharma (Clinical Psychology)"
+      : doctorId === 3
+      ? "Dr. Ananya Roy (Behavioral Health)"
+      : "Dr. Meera Mehta (Psychiatry)";
+
+  return (
+    <div className="space-y-8">
+      <SectionHeading
+        eyebrow="Medical Validation & Demographics"
+        title="Personal Medical Profile"
+        detail="Review and update your clinical records, emergency information, and care team link."
+        action={
+          <span className="privacy-pill">
+            <LockKeyhole size={12} /> Confidential & HIPAA/ABDM Compliant
+          </span>
+        }
+      />
+
+      {/* Clinical Status Header Banner */}
+      <div className="surface-card p-6 rounded-2xl border border-[#dce7df] flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <Avatar initials={initialsOf(name || "You")} tone="ink" size="lg" />
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="text-xl font-bold text-[#173330]">{name || "Patient"}</h3>
+              <span className="status-chip status-chip-mint">
+                {patient?.status || "Active Patient"}
+              </span>
+            </div>
+            <p className="text-xs text-[#71817d] mt-1">
+              Account Email: <strong>{user?.email || "patient@mindsafe.care"}</strong> · ID: #{patientId}
+            </p>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2 text-xs">
+          <div className="px-3 py-1.5 rounded-lg bg-[#f0f6f3] border border-[#e2eae4]">
+            <span className="text-[#8a9993] block text-[10px] font-bold uppercase">Current Mood</span>
+            <strong className="text-[#2d655b]">{patient?.mood || "Not recorded yet"}</strong>
+          </div>
+          <div className="px-3 py-1.5 rounded-lg bg-[#f0f6f3] border border-[#e2eae4]">
+            <span className="text-[#8a9993] block text-[10px] font-bold uppercase">Assigned Doctor</span>
+            <strong className="text-[#2d655b]">{assignedDoctor.split(" (")[0]}</strong>
+          </div>
+        </div>
+      </div>
+
+      {/* Profile Form */}
+      <form onSubmit={handleSave} className="space-y-6">
+        <div className="grid gap-6 md:grid-cols-2">
+          {/* Section 1: Basic Demographics */}
+          <div className="surface-card p-6 space-y-4">
+            <div className="border-b border-[#e7ebe5] pb-3">
+              <Eyebrow>Identity & Age Verification</Eyebrow>
+              <h4 className="text-sm font-bold text-[#173330] mt-0.5">Demographics</h4>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-[#355850] mb-1">Full Legal Name</label>
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                required
+                className="w-full px-3 py-2 text-xs border border-[#dce7df] rounded-lg bg-[#f8fbf8] text-[#173330]"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-bold text-[#355850] mb-1">Age (Years)</label>
+                <input
+                  type="number"
+                  min={10}
+                  max={120}
+                  value={age}
+                  onChange={(e) => setAge(Number(e.target.value))}
+                  required
+                  className="w-full px-3 py-2 text-xs border border-[#dce7df] rounded-lg bg-[#f8fbf8] text-[#173330]"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-[#355850] mb-1">Date of Birth</label>
+                <input
+                  type="date"
+                  value={dateOfBirth}
+                  onChange={(e) => setDateOfBirth(e.target.value)}
+                  required
+                  className="w-full px-3 py-2 text-xs border border-[#dce7df] rounded-lg bg-[#f8fbf8] text-[#173330]"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-bold text-[#355850] mb-1">Gender</label>
+                <select
+                  value={gender}
+                  onChange={(e) => setGender(e.target.value)}
+                  className="w-full px-3 py-2 text-xs border border-[#dce7df] rounded-lg bg-[#f8fbf8] text-[#173330]"
+                >
+                  <option value="Female">Female</option>
+                  <option value="Male">Male</option>
+                  <option value="Non-binary">Non-binary</option>
+                  <option value="Prefer not to say">Prefer not to say</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-[#355850] mb-1">Blood Group</label>
+                <select
+                  value={bloodGroup}
+                  onChange={(e) => setBloodGroup(e.target.value)}
+                  className="w-full px-3 py-2 text-xs border border-[#dce7df] rounded-lg bg-[#f8fbf8] text-[#173330]"
+                >
+                  <option value="A+">A+</option>
+                  <option value="A-">A-</option>
+                  <option value="B+">B+</option>
+                  <option value="B-">B-</option>
+                  <option value="O+">O+</option>
+                  <option value="O-">O-</option>
+                  <option value="AB+">AB+</option>
+                  <option value="AB-">AB-</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* Section 2: Clinical Situation & Care Details */}
+          <div className="surface-card p-6 space-y-4">
+            <div className="border-b border-[#e7ebe5] pb-3">
+              <Eyebrow>Clinical Focus & Support</Eyebrow>
+              <h4 className="text-sm font-bold text-[#173330] mt-0.5">Medical Situation & Doctor</h4>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-[#355850] mb-1">Primary Health / Wellness Goal</label>
+              <select
+                value={condition}
+                onChange={(e) => setCondition(e.target.value)}
+                className="w-full px-3 py-2 text-xs border border-[#dce7df] rounded-lg bg-[#f8fbf8] text-[#173330]"
+              >
+                <option value="Depression & Low Mood Support">Depression & Low Mood Support</option>
+                <option value="Anxiety & Stress Management">Anxiety & Stress Management</option>
+                <option value="Sleep Health & Circadian Restoration">Sleep Health & Circadian Restoration</option>
+                <option value="Addiction Awareness & Substance Recovery">Addiction Awareness & Substance Recovery</option>
+                <option value="General mental health support">General mental health support</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-[#355850] mb-1">Assigned Licensed Clinician</label>
+              <select
+                value={doctorId}
+                onChange={(e) => setDoctorId(Number(e.target.value))}
+                className="w-full px-3 py-2 text-xs border border-[#dce7df] rounded-lg bg-[#f8fbf8] text-[#173330]"
+              >
+                <option value={1}>Dr. Meera Mehta (Lead Psychiatrist)</option>
+                <option value={2}>Dr. Rajesh Sharma (Clinical Psychologist)</option>
+                <option value={3}>Dr. Ananya Roy (Behavioral Health Specialist)</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-[#355850] mb-1">Known Drug Allergies / Notes</label>
+              <input
+                type="text"
+                value={allergies}
+                onChange={(e) => setAllergies(e.target.value)}
+                placeholder="e.g. None, Penicillin, Aspirin"
+                className="w-full px-3 py-2 text-xs border border-[#dce7df] rounded-lg bg-[#f8fbf8] text-[#173330]"
+              />
+            </div>
+          </div>
+
+          {/* Section 3: Contact & Emergency */}
+          <div className="surface-card p-6 space-y-4 md:col-span-2">
+            <div className="border-b border-[#e7ebe5] pb-3">
+              <Eyebrow>Safety & Emergency Protocols</Eyebrow>
+              <h4 className="text-sm font-bold text-[#173330] mt-0.5">Emergency Information</h4>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="block text-xs font-bold text-[#355850] mb-1">Your Contact Phone Number</label>
+                <input
+                  type="tel"
+                  value={contact}
+                  onChange={(e) => setContact(e.target.value)}
+                  placeholder="+91 98765 43210"
+                  className="w-full px-3 py-2 text-xs border border-[#dce7df] rounded-lg bg-[#f8fbf8] text-[#173330]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-[#355850] mb-1">Emergency Contact (Name & Number)</label>
+                <input
+                  type="text"
+                  value={emergencyContact}
+                  onChange={(e) => setEmergencyContact(e.target.value)}
+                  placeholder="e.g. Riya Kapoor (Sister) — +91 98111 22233"
+                  className="w-full px-3 py-2 text-xs border border-[#dce7df] rounded-lg bg-[#f8fbf8] text-[#173330]"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-end gap-3 pt-2">
+          <ActionButton type="submit" disabled={saving}>
+            {saving ? "Saving Changes..." : "Save Medical Profile"} <Check size={16} />
+          </ActionButton>
+        </div>
+      </form>
     </div>
   );
 }
@@ -2086,23 +2348,44 @@ function LatestAssessmentCard({ patientId, onNavigate }: { patientId: number; on
   );
 }
 
-function PortalContent({ role, activeNav, onNavigate }: { role: Role; activeNav: NavId; onNavigate: (nav: NavId) => void }) {
+function PortalContent({
+  role,
+  activeNav,
+  onNavigate,
+  patientId = 1,
+  patient,
+  user,
+  onProfileUpdated,
+}: {
+  role: Role;
+  activeNav: NavId;
+  onNavigate: (nav: NavId) => void;
+  patientId?: number;
+  patient?: any;
+  user?: any;
+  onProfileUpdated?: () => void;
+}) {
   if (role === "patient") {
     if (activeNav === "Companion") return <PatientCompanion />;
-    if (activeNav === "Assessments") return <PatientAssessments />;
+    if (activeNav === "Assessments") return <PatientAssessments patientId={patientId} />;
     if (activeNav === "Wellness") return <PatientWellness />;
-    if (activeNav === "Care team") return <PatientCareTeam />;
-    if (activeNav === "My Records") return <PatientMyRecords />;
-    return <PatientOverview onNavigate={onNavigate} />;
+    if (activeNav === "Care team") return <PatientCareTeam patientId={patientId} patient={patient} />;
+    if (activeNav === "My Records") return <PatientMyRecords patientId={patientId} />;
+    if (activeNav === "Profile") return <PatientProfileView patientId={patientId} patient={patient} user={user} onProfileUpdated={onProfileUpdated} />;
+    return <PatientOverview onNavigate={onNavigate} patientId={patientId} patient={patient} />;
   }
   if (activeNav === "Patients") return <DoctorPatients />;
   if (activeNav === "Assessments") return <DoctorAssessments onNavigate={onNavigate} />;
   if (activeNav === "Medication") return <DoctorMedication />;
   if (activeNav === "Alerts") return <DoctorAlerts onSelectPatient={() => onNavigate("Patients")} />;
+  if (activeNav === "Profile") return <PatientProfileView patientId={patientId} patient={patient} user={user} onProfileUpdated={onProfileUpdated} />;
   return <DoctorOverview onNavigate={onNavigate} />;
 }
 
 export default function Home() {
+  useEffect(() => {
+    document.title = "MindSafe — A softer way forward";
+  }, []);
   const [language, setLanguage] = useState<Language>(getStoredLanguage);
   const { theme, toggleTheme } = useTheme();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -2118,6 +2401,24 @@ export default function Home() {
   });
   const user = meQuery.data ?? null;
   const role: Role = user?.portalRole === "doctor" ? "doctor" : "patient";
+  const patientId = user?.patientId || 1;
+
+  // Real-time patient profile query
+  const patientDetailsQuery = trpc.patients.getDetails.useQuery(
+    { patientId },
+    { enabled: Boolean(user && role === "patient" && patientId > 0) }
+  );
+  const patient = patientDetailsQuery.data?.patient;
+
+  // Onboarding modal state
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [onboardingDismissed, setOnboardingDismissed] = useState(false);
+
+  useEffect(() => {
+    if (patient && patient.status === "New patient" && !onboardingDismissed) {
+      setShowOnboarding(true);
+    }
+  }, [patient, onboardingDismissed]);
 
   const navItems = role === "patient" ? patientNav : doctorNav;
   const labels = portalLabels[language];
@@ -2209,13 +2510,25 @@ export default function Home() {
             </div>
           </div>
           <button className="sidebar-help" onClick={() => setLocation("/help")}><CircleHelp size={17} />Help centre</button>
-          <div className="profile-strip">
+          <div
+            className="profile-strip cursor-pointer hover:bg-[#eaf1ec] transition-colors rounded-xl p-2"
+            onClick={() => navigate("Profile")}
+            title="View & Edit Medical Profile"
+          >
             <Avatar initials={displayInitials} tone={role === "patient" ? "ink" : "blue"} size="sm" />
             <div className="min-w-0 flex-1">
               <strong>{displayName}</strong>
               <span>{role === "patient" ? (user.demo ? "Demo patient account" : "Patient account") : "Clinician account"}</span>
             </div>
-            <button className="icon-button" onClick={() => logoutMutation.mutate()} aria-label="Sign out" title="Sign out">
+            <button
+              className="icon-button"
+              onClick={(e) => {
+                e.stopPropagation();
+                logoutMutation.mutate();
+              }}
+              aria-label="Sign out"
+              title="Sign out"
+            >
               <LogOut size={16} />
             </button>
           </div>
@@ -2249,7 +2562,11 @@ export default function Home() {
               <Bell size={18} />
               <span className="notification-dot" />
             </button>
-            <div className="top-avatar">
+            <div
+              className="top-avatar cursor-pointer hover:opacity-85 transition-opacity"
+              onClick={() => navigate("Profile")}
+              title="View & Edit Medical Profile"
+            >
               <Avatar initials={displayInitials} tone={role === "patient" ? "ink" : "blue"} size="sm" />
             </div>
           </div>
@@ -2290,10 +2607,10 @@ export default function Home() {
                   </button>
                 )}
                 <button
-                  onClick={() => { navigate("Assessments"); setShowSearchModal(false); }}
+                  onClick={() => { navigate("Profile"); setShowSearchModal(false); }}
                   className="w-full text-left p-3 rounded-xl bg-[#f8fbf8] hover:bg-[#eef5f2] border border-[#e2eae4] flex items-center justify-between text-xs font-bold text-[#173330]"
                 >
-                  <span className="flex items-center gap-2"><FileCheck2 size={16} className="text-[#39796c]" /> PHQ-9 & GAD-7 Check-ins</span>
+                  <span className="flex items-center gap-2"><User size={16} className="text-[#39796c]" /> Medical Profile & Demographics</span>
                   <ChevronRight size={15} />
                 </button>
               </div>
@@ -2329,9 +2646,34 @@ export default function Home() {
               <button className="date-pill"><CalendarDays size={15} /> {role === "patient" ? "Today" : "This week"}</button>
             </div>
           </div>
-          <PortalContent role={role} activeNav={activeNav} onNavigate={navigate} />
+          <PortalContent
+            role={role}
+            activeNav={activeNav}
+            onNavigate={navigate}
+            patientId={patientId}
+            patient={patient}
+            user={user}
+            onProfileUpdated={() => {
+              patientDetailsQuery.refetch();
+              meQuery.refetch();
+            }}
+          />
         </div>
       </main>
+
+      {/* Post-Registration Patient Onboarding Modal */}
+      {role === "patient" && (
+        <PatientOnboardingModal
+          isOpen={showOnboarding}
+          patientId={patientId}
+          initialName={user?.name || "Patient"}
+          onComplete={() => {
+            setShowOnboarding(false);
+            setOnboardingDismissed(true);
+            patientDetailsQuery.refetch();
+          }}
+        />
+      )}
     </div>
   );
 }

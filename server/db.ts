@@ -318,6 +318,158 @@ export async function getPatientById(id: number): Promise<PatientProfile | undef
   return store.patients.find((p) => p.id === id);
 }
 
+function extractInitials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "U";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+export async function createPatientProfile(data: {
+  name: string;
+  userId?: number;
+  age?: number;
+  dateOfBirth?: string;
+  gender?: string;
+  contact?: string;
+  condition?: string;
+  doctorId?: number;
+}): Promise<PatientProfile> {
+  const initials = extractInitials(data.name);
+  const now = new Date();
+
+  const db = await getDb();
+  if (db) {
+    try {
+      const [insertRes] = (await db.insert(patientProfiles).values({
+        name: data.name,
+        initials,
+        age: data.age ?? 0,
+        dateOfBirth: data.dateOfBirth ?? null,
+        gender: data.gender ?? null,
+        contact: data.contact ?? null,
+        condition: data.condition ?? "General wellbeing",
+        mood: "Not recorded yet",
+        moodTone: "mint",
+        lastSeen: "Just now",
+        status: "New patient",
+        doctorId: data.doctorId ?? 1,
+        userId: data.userId ?? null,
+        createdAt: now,
+        updatedAt: now,
+      })) as any;
+      const [p] = await db
+        .select()
+        .from(patientProfiles)
+        .where(eq(patientProfiles.id, insertRes.insertId));
+      return p;
+    } catch (err) {
+      console.warn("[Database] MySQL createPatientProfile failed, fallback to local store:", err);
+    }
+  }
+
+  const store = readLocalStore();
+  const newId =
+    store.patients.length > 0 ? Math.max(...store.patients.map((p) => p.id)) + 1 : 1;
+  const newProfile: PatientProfile = {
+    id: newId,
+    userId: data.userId ?? null,
+    name: data.name,
+    initials,
+    age: data.age ?? 0,
+    dateOfBirth: data.dateOfBirth ?? null,
+    gender: data.gender ?? null,
+    contact: data.contact ?? null,
+    condition: data.condition ?? "General wellbeing",
+    mood: "Not recorded yet",
+    moodTone: "mint",
+    lastSeen: "Just now",
+    status: "New patient",
+    doctorId: data.doctorId ?? 1,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  store.patients.push(newProfile);
+  writeLocalStore(store);
+  return newProfile;
+}
+
+export async function updatePatientProfile(
+  id: number,
+  updates: Partial<PatientProfile>
+): Promise<PatientProfile | undefined> {
+  const db = await getDb();
+  if (db) {
+    try {
+      await db
+        .update(patientProfiles)
+        .set({
+          ...updates,
+          updatedAt: new Date(),
+        })
+        .where(eq(patientProfiles.id, id));
+      const [p] = await db
+        .select()
+        .from(patientProfiles)
+        .where(eq(patientProfiles.id, id));
+      if (p) return p;
+    } catch (err) {
+      console.warn("[Database] MySQL updatePatientProfile failed:", err);
+    }
+  }
+
+  const store = readLocalStore();
+  const idx = store.patients.findIndex((p) => p.id === id);
+  if (idx !== -1) {
+    const updatedInitials = updates.name ? extractInitials(updates.name) : store.patients[idx].initials;
+    store.patients[idx] = {
+      ...store.patients[idx],
+      ...updates,
+      initials: updatedInitials,
+      updatedAt: new Date(),
+    };
+    writeLocalStore(store);
+    return store.patients[idx];
+  }
+  return undefined;
+}
+
+export async function recordMoodCheckIn(data: {
+  patientId: number;
+  moodScore: number;
+  moodLabel: string;
+  moodTone?: string;
+  note?: string;
+  feelings?: string[];
+}): Promise<{ patient: PatientProfile | undefined; assessment: Assessment }> {
+  const patient = await updatePatientProfile(data.patientId, {
+    mood: data.moodLabel,
+    moodTone: data.moodTone ?? "mint",
+    lastSeen: "Just now",
+    status: "Active",
+  });
+
+  const assessment = await createAssessment({
+    patientId: data.patientId,
+    title: `Daily Mood: ${data.moodLabel}`,
+    type: "Daily Check-in",
+    score: data.moodScore,
+    maxScore: 5,
+    severity: data.moodLabel,
+    answersJson: JSON.stringify({
+      moodScore: data.moodScore,
+      moodLabel: data.moodLabel,
+      note: data.note || "",
+      feelings: data.feelings || [],
+      timestamp: new Date().toISOString(),
+    }),
+  });
+
+  return { patient, assessment };
+}
+
+
 export async function createPrescription(data: {
   patientId: number;
   doctorId: number;

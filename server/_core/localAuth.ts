@@ -20,6 +20,7 @@ import { parse } from "cookie";
 import { SignJWT, jwtVerify } from "jose";
 import type { SessionUser } from "./context";
 import { COOKIE_NAME } from "@shared/const";
+import { createPatientProfile } from "../db";
 
 export type PortalRole = "patient" | "doctor";
 
@@ -99,13 +100,24 @@ export async function createAccount(input: {
   }
 
   const accounts = readAccounts();
+  const nextAccountId = accounts.reduce((max, account) => Math.max(max, account.id), 0) + 1;
+
+  let patientId = 0;
+  if (input.portalRole === "patient") {
+    const profile = await createPatientProfile({
+      name: input.name.trim(),
+      userId: nextAccountId,
+    });
+    patientId = profile.id;
+  }
+
   const account: StoredAccount = {
-    id: accounts.reduce((max, account) => Math.max(max, account.id), 0) + 1,
+    id: nextAccountId,
     email,
     name: input.name.trim(),
     passwordHash: await hashPassword(input.password),
     portalRole: input.portalRole,
-    patientId: input.portalRole === "patient" ? DEFAULT_PATIENT_ID : 0,
+    patientId,
     createdAt: new Date().toISOString(),
   };
   accounts.push(account);

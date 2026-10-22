@@ -7,6 +7,7 @@ export type PortalNavId =
   | "Wellness"
   | "Care team"
   | "My Records"
+  | "Profile"
   | "Patients"
   | "Medication"
   | "Alerts";
@@ -19,6 +20,7 @@ export const portalSlugs: Record<PortalNavId, string> = {
   Wellness: "wellness",
   "Care team": "care-team",
   "My Records": "records",
+  Profile: "profile",
   Patients: "patients",
   Medication: "medication",
   Alerts: "alerts",
@@ -28,8 +30,8 @@ const sectionToNav: Record<string, PortalNavId> = Object.fromEntries(
   Object.entries(portalSlugs).map(([nav, slug]) => [slug, nav as PortalNavId]),
 );
 
-const patientSections: PortalNavId[] = ["Overview", "Companion", "Assessments", "Wellness", "Care team", "My Records"];
-const doctorSections: PortalNavId[] = ["Overview", "Patients", "Assessments", "Medication", "Alerts"];
+const patientSections: PortalNavId[] = ["Overview", "Companion", "Assessments", "Wellness", "Care team", "My Records", "Profile"];
+const doctorSections: PortalNavId[] = ["Overview", "Patients", "Assessments", "Medication", "Alerts", "Profile"];
 
 export function sectionsForRole(role: PortalRole): PortalNavId[] {
   return role === "patient" ? patientSections : doctorSections;

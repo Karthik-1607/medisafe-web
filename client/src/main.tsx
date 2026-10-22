@@ -83,3 +83,14 @@ createRoot(document.getElementById("root")!).render(
     </QueryClientProvider>
   </trpc.Provider>
 );
+
+const endpoint = import.meta.env.VITE_ANALYTICS_ENDPOINT;
+const websiteId = import.meta.env.VITE_ANALYTICS_WEBSITE_ID;
+if (endpoint && websiteId) {
+  const analyticsScript = document.createElement("script");
+  analyticsScript.defer = true;
+  analyticsScript.src = new URL("umami", endpoint.endsWith("/") ? endpoint : `${endpoint}/`).toString();
+  analyticsScript.dataset.websiteId = websiteId;
+  document.head.appendChild(analyticsScript);
+}
+

@@ -18,6 +18,7 @@ import {
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router } from "./_core/trpc";
 import { invokeLLM } from "./_core/llm";
+import { companionRequestSchema, generateCompanionReply } from "./companion";
 import {
   getAllPatients,
   getPatientById,
@@ -33,6 +34,8 @@ import {
   getNotesForPatient,
   createAppointment,
   getAppointmentsForPatient,
+  updatePatientProfile,
+  recordMoodCheckIn,
 } from "./db";
 import { storagePut } from "./storage";
 
@@ -218,6 +221,49 @@ export const appRouter = router({
           appointments: appointmentsList,
         };
       }),
+
+    updateProfile: publicProcedure
+      .input(
+        z.object({
+          patientId: z.number(),
+          name: z.string().optional(),
+          age: z.number().optional(),
+          dateOfBirth: z.string().optional(),
+          gender: z.string().optional(),
+          contact: z.string().optional(),
+          condition: z.string().optional(),
+          doctorId: z.number().optional(),
+          status: z.string().optional(),
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        verifyPatientAccess(ctx, input.patientId);
+        const { patientId, ...updates } = input;
+        const updated = await updatePatientProfile(patientId, updates);
+        if (!updated) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Patient profile not found",
+          });
+        }
+        return updated;
+      }),
+
+    checkIn: publicProcedure
+      .input(
+        z.object({
+          patientId: z.number(),
+          moodScore: z.number().min(1).max(5),
+          moodLabel: z.string(),
+          moodTone: z.string().default("mint"),
+          note: z.string().optional(),
+          feelings: z.array(z.string()).optional(),
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        verifyPatientAccess(ctx, input.patientId);
+        return await recordMoodCheckIn(input);
+      }),
   }),
 
   prescriptions: router({
@@ -262,7 +308,8 @@ export const appRouter = router({
     listForPatient: publicProcedure
       .input(z.object({ patientId: z.number().optional() }).optional())
       .query(async ({ input, ctx }) => {
-        const patientId = input?.patientId || 1;
+        const user = requireSession(ctx);
+        const patientId = input?.patientId ?? user.patientId ?? 1;
         verifyPatientAccess(ctx, patientId);
         return await getPrescriptionsForPatient(patientId);
       }),
@@ -278,7 +325,7 @@ export const appRouter = router({
     upload: publicProcedure
       .input(
         z.object({
-          patientId: z.number(),
+          patientId: z.number().optional(),
           fileName: z.string().min(1, "File name is required"),
           fileType: z.string().refine(
             (val) => ["application/pdf", "image/png", "image/jpeg", "image/jpg"].includes(val.toLowerCase()),
@@ -291,9 +338,11 @@ export const appRouter = router({
         })
       )
       .mutation(async ({ input, ctx }) => {
-        verifyPatientAccess(ctx, input.patientId);
+        const user = requireSession(ctx);
+        const patientId = input.patientId ?? user.patientId ?? 1;
+        verifyPatientAccess(ctx, patientId);
 
-        const patient = await getPatientById(input.patientId);
+        const patient = await getPatientById(patientId);
         if (!patient) {
           throw new TRPCError({
             code: "NOT_FOUND",
@@ -302,12 +351,12 @@ export const appRouter = router({
         }
 
         const safeFileName = input.fileName.replace(/[^a-zA-Z0-9_.-]/g, "_");
-        const relKey = `patient_${input.patientId}/${Date.now()}_${safeFileName}`;
+        const relKey = `patient_${patientId}/${Date.now()}_${safeFileName}`;
 
         const { url } = await storagePut(relKey, input.fileData, input.fileType);
 
         const record = await createPatientRecord({
-          patientId: input.patientId,
+          patientId,
           fileName: input.fileName,
           fileType: input.fileType,
           fileSize: input.fileSize,
@@ -322,7 +371,8 @@ export const appRouter = router({
     listForPatient: publicProcedure
       .input(z.object({ patientId: z.number().optional() }).optional())
       .query(async ({ input, ctx }) => {
-        const patientId = input?.patientId || 1;
+        const user = requireSession(ctx);
+        const patientId = input?.patientId ?? user.patientId ?? 1;
         verifyPatientAccess(ctx, patientId);
         return await getPatientRecords(patientId);
       }),
@@ -332,7 +382,7 @@ export const appRouter = router({
     submit: publicProcedure
       .input(
         z.object({
-          patientId: z.number().default(1),
+          patientId: z.number().optional(),
           title: z.string(),
           type: z.string(),
           score: z.number(),
@@ -342,14 +392,26 @@ export const appRouter = router({
         })
       )
       .mutation(async ({ input, ctx }) => {
-        verifyPatientAccess(ctx, input.patientId);
-        return await createAssessment(input);
+        const user = requireSession(ctx);
+        const patientId = input.patientId ?? user.patientId ?? 1;
+        verifyPatientAccess(ctx, patientId);
+        const res = await createAssessment({
+          ...input,
+          patientId,
+        });
+        await updatePatientProfile(patientId, {
+          mood: input.severity || "Evaluated",
+          lastSeen: "Just now",
+          status: "Assessment completed",
+        });
+        return res;
       }),
 
     listForPatient: publicProcedure
       .input(z.object({ patientId: z.number().optional() }).optional())
       .query(async ({ input, ctx }) => {
-        const patientId = input?.patientId || 1;
+        const user = requireSession(ctx);
+        const patientId = input?.patientId ?? user.patientId ?? 1;
         verifyPatientAccess(ctx, patientId);
         return await getAssessmentsForPatient(patientId);
       }),
@@ -404,7 +466,8 @@ export const appRouter = router({
     listForPatient: publicProcedure
       .input(z.object({ patientId: z.number().optional() }).optional())
       .query(async ({ input, ctx }) => {
-        const patientId = input?.patientId || 1;
+        const user = requireSession(ctx);
+        const patientId = input?.patientId ?? user.patientId ?? 1;
         verifyPatientAccess(ctx, patientId);
         return await getAppointmentsForPatient(patientId);
       }),
@@ -423,39 +486,37 @@ export const appRouter = router({
         })
       )
       .mutation(async ({ input }) => {
-        // Honest degradation: when the model is unreachable the client is told
-        // this is a fixed notice instead of receiving canned replies that read
-        // as if a real companion had answered.
+        const userMessages = input.messages
+          .filter((m) => m.role === "user" || m.role === "assistant")
+          .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
+
+        try {
+          if (userMessages.length > 0) {
+            const reply = await generateCompanionReply({
+              language: "English",
+              detailLevel: "concise",
+              messages: userMessages.slice(-16),
+            });
+            return { reply, degraded: false } as const;
+          }
+        } catch (err) {
+          console.warn("[AI] generateCompanionReply failed, trying invokeLLM fallback:", err);
+        }
+
         const degradedResponse = {
           reply:
             "I can't reach the companion service right now, so this is a fixed fallback notice rather than a real response. Please try again in a moment. Until then: breathe in for 4 counts, out for 4 counts, and reach out to someone you trust — or local emergency support if you feel unsafe.",
           degraded: true,
         } as const;
 
-        try {
-          const result = await invokeLLM({
-            messages: [
-              {
-                role: "system",
-                content:
-                  "You are MindSafe Companion, a empathetic, non-judgmental, language-aware supportive companion for mental health and recovery. Speak warmly in English, Telugu, or Tenglish according to how the user addresses you. Keep responses supportive, practical, and grounded. You do NOT diagnose or provide emergency medical advice.",
-              },
-              ...input.messages.map((m) => ({
-                role: m.role as "user" | "assistant",
-                content: m.content,
-              })),
-            ],
-          });
-          const textChoice = result.choices?.[0]?.message?.content;
-          if (typeof textChoice === "string" && textChoice.trim().length > 0) {
-            return { reply: textChoice, degraded: false } as const;
-          }
-        } catch (err) {
-          console.warn("[AI] invokeLLM unavailable, returning degraded response:", err);
-        }
-
         return degradedResponse;
       }),
+  }),
+
+  chat: router({
+    send: publicProcedure
+      .input(companionRequestSchema)
+      .mutation(async ({ input }) => ({ text: await generateCompanionReply(input) })),
   }),
 });
 
