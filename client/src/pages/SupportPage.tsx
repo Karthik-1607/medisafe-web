@@ -9,19 +9,19 @@ export default function SupportPage({ emergency = false }: { emergency?: boolean
   const [language, setLanguage] = useState<Language>(() => (getStoredLanguage() === "telugu" ? "telugu" : "english"));
   const [, setLocation] = useLocation();
   const title = emergency ? "Urgent support should be clear." : "You do not have to work it out alone.";
-  const intro = emergency ? "If you may hurt yourself or someone else, or feel unable to stay safe, contact your local emergency service now. MindSafe can help you find the next step, but it is not an emergency service." : "Choose the kind of support that fits this moment. You can start quietly, talk with a doctor, or move directly to urgent resources.";
+  const intro = emergency ? "If you may hurt yourself or someone else, or feel unable to stay safe, contact your local emergency service now. MediSafe can help you find the next step, but it is not an emergency service." : "Choose the kind of support that fits this moment. You can start quietly, talk with a doctor, or move directly to urgent resources.";
 
   useEffect(() => {
     const desc = emergency
-      ? "If you may hurt yourself or someone else, or feel unable to stay safe, contact your local emergency service now. MindSafe can help you find the next step, but it is not an emergency service."
+      ? "If you may hurt yourself or someone else, or feel unable to stay safe, contact your local emergency service now. MediSafe can help you find the next step, but it is not an emergency service."
       : "Choose the kind of support that fits this moment. You can start quietly, talk with a doctor, or move directly to urgent resources.";
     document.title = emergency
-      ? "MindSafe — Urgent support should be clear"
-      : "MindSafe — You do not have to work it out alone";
+      ? "MediSafe — Urgent support should be clear"
+      : "MediSafe — You do not have to work it out alone";
   }, []);
   const items = emergency ? [
     ["Immediate danger", "Contact your local emergency service now, or go to the nearest emergency department. If possible, stay with someone you trust.", "Call local emergency service"],
-    ["Talk to your doctor", "Open your MindSafe care space to review your safety plan and doctor-connected support.", "Open care space"],
+    ["Talk to your doctor", "Open your MediSafe care space to review your safety plan and doctor-connected support.", "Open care space"],
     ["Make the next ten minutes safer", "Move away from anything you could use to harm yourself, get near another person, and take one small grounding step.", "See grounding steps"],
   ] : [
     ["Start with a self-check", "Use a short check-in to put words around mood, anxiety, cravings, or what feels difficult today.", "Open patient space"],
@@ -49,8 +49,8 @@ export default function SupportPage({ emergency = false }: { emergency?: boolean
       <div className="support-breadcrumb"><Link href="/"><ArrowLeft size={14} /> Back to home</Link></div>
       <section className="support-hero"><span className="journey-eyebrow"><CircleAlert size={14} /> {emergency ? "Emergency support" : "Get help"}</span><h1>{title}</h1><p>{intro}</p><div className="support-safety-note"><LockKeyhole size={15} /> Your information stays private unless you choose to share it with your doctor.</div></section>
       <section className="support-options">{items.map(([heading, description, action], index) => <article className="support-option" key={heading}><span className="support-option-icon">{index === 0 ? <PhoneCall size={19} /> : index === 1 ? <Stethoscope size={19} /> : <HeartHandshake size={19} />}</span><span className="support-option-number">0{index + 1}</span><h2>{heading}</h2><p>{description}</p><button onClick={() => activate(heading)}>{action} <ArrowRight size={15} /></button>{expanded === heading && <div className="support-expanded"><ShieldCheck size={15} /> {emergency ? "Try naming five things you can see, four things you can feel, and one person you can contact. If safety is still uncertain, use emergency services now." : "You can start with one sentence. You do not need to explain everything before asking for support."}</div>}</article>)}</section>
-      <section className="support-footer-cta"><MessageCircle size={22} /><div><h2>Need a quiet place to start?</h2><p>MindSafe’s companion can listen in English, Telugu, or Tenglish. It is supportive, not diagnostic.</p></div><Link href="/portal/companion" className="landing-primary-action">Open companion <ArrowRight size={16} /></Link></section>
+      <section className="support-footer-cta"><MessageCircle size={22} /><div><h2>Need a quiet place to start?</h2><p>MediSafe’s companion can listen in English, Telugu, or Tenglish. It is supportive, not diagnostic.</p></div><Link href="/portal/companion" className="landing-primary-action">Open companion <ArrowRight size={16} /></Link></section>
     </main>
-    <footer className="journey-footer"><Link href="/"><Leaf size={16} /> mindsafe</Link><span>Emergency services remain the fastest option in immediate danger.</span><Link href="/help">Get help & privacy</Link></footer>
+    <footer className="journey-footer"><Link href="/"><Leaf size={16} /> medisafe</Link><span>Emergency services remain the fastest option in immediate danger.</span><Link href="/help">Get help & privacy</Link></footer>
   </div>;
 }

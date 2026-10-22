@@ -42,7 +42,7 @@ type MessageUpdate = ChatMessage[] | ((current: ChatMessage[]) => ChatMessage[])
 
 function readDetailPreference(): DetailLevel {
   try {
-    return window.localStorage.getItem("mindsafe.replyLength") === "detailed" ? "detailed" : "concise";
+    return window.localStorage.getItem("medisafe.replyLength") === "detailed" ? "detailed" : "concise";
   } catch {
     return "concise";
   }
@@ -56,7 +56,7 @@ function getConversationTitle(messages: ChatMessage[]): string | undefined {
 export function CompanionWorkspace({ language: propLanguage, setLanguage: propSetLanguage, setNotice: propSetNotice }: Props) {
   const [internalLanguage, setInternalLanguage] = useState<Language>(() => {
     try {
-      const raw = window.localStorage.getItem("mindsafe.language");
+      const raw = window.localStorage.getItem("medisafe.language");
       return raw ? JSON.parse(raw) : "English";
     } catch {
       return "English";
@@ -67,7 +67,7 @@ export function CompanionWorkspace({ language: propLanguage, setLanguage: propSe
   const setLanguage = (lang: Language) => {
     setInternalLanguage(lang);
     try {
-      window.localStorage.setItem("mindsafe.language", JSON.stringify(lang));
+      window.localStorage.setItem("medisafe.language", JSON.stringify(lang));
     } catch {}
     propSetLanguage?.(lang);
   };
@@ -88,7 +88,7 @@ export function CompanionWorkspace({ language: propLanguage, setLanguage: propSe
   const [isListening, setIsListening] = useState(false);
   const [intentionDraft, setIntentionDraft] = useState(() => {
     try {
-      return window.localStorage.getItem("mindsafe_intention") || "";
+      return window.localStorage.getItem("medisafe_intention") || "";
     } catch {
       return "";
     }
@@ -117,7 +117,7 @@ export function CompanionWorkspace({ language: propLanguage, setLanguage: propSe
 
   useEffect(() => {
     try {
-      window.localStorage.setItem("mindsafe.replyLength", detailLevel);
+      window.localStorage.setItem("medisafe.replyLength", detailLevel);
     } catch {
       // A reply-length preference is optional and does not block chat.
     }
@@ -180,7 +180,7 @@ export function CompanionWorkspace({ language: propLanguage, setLanguage: propSe
         ? { ...message, status: aborted ? "stopped" : "error" }
         : message));
       if (!aborted) {
-        console.error("[MindSafe chat] stream failed", error);
+        console.error("[MediSafe chat] stream failed", error);
         setNotice("I couldn’t finish that reply. Your message is still here, and you can retry it.");
       }
     } finally {
@@ -270,7 +270,7 @@ export function CompanionWorkspace({ language: propLanguage, setLanguage: propSe
   };
 
   const clearSavedHistory = () => {
-    if (!window.confirm("Clear all saved MindSafe conversations from this browser? This cannot be undone.")) return;
+    if (!window.confirm("Clear all saved MediSafe conversations from this browser? This cannot be undone.")) return;
     stopResponse();
     const next = createConversation();
     setConversations([next]);
@@ -333,7 +333,7 @@ export function CompanionWorkspace({ language: propLanguage, setLanguage: propSe
   const handleSaveIntention = () => {
     const trimmed = intentionDraft.trim();
     try {
-      window.localStorage.setItem("mindsafe_intention", trimmed);
+      window.localStorage.setItem("medisafe_intention", trimmed);
       setNotice(trimmed ? "Your intention is saved for this session." : "Intention cleared.");
     } catch {
       setNotice("Could not save intention in local storage.");
@@ -342,7 +342,7 @@ export function CompanionWorkspace({ language: propLanguage, setLanguage: propSe
 
   return (
     <div className="companion-layout">
-      <section className="companion-card" aria-label="MindSafe companion chat">
+      <section className="companion-card" aria-label="MediSafe companion chat">
         <div className="companion-topbar">
           <div className="companion-title">
             <div className="sparkle-avatar"><MessageCircleHeart size={17} /></div>
@@ -361,7 +361,7 @@ export function CompanionWorkspace({ language: propLanguage, setLanguage: propSe
           </span>
         </div>
         <div className="date-divider"><span />{today.toUpperCase()}<span /></div>
-        <div className="chat-sr-only" role="status" aria-live="polite">{isTyping ? "MindSafe is replying." : ""}</div>
+        <div className="chat-sr-only" role="status" aria-live="polite">{isTyping ? "MediSafe is replying." : ""}</div>
         <div className="message-list" ref={messageListRef} aria-live="off">
           {messages.map(message => (
             <div className={`message-row ${message.role === "user" ? "from-user" : "from-assistant"}`} key={message.id}>

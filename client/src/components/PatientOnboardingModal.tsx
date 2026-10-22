@@ -91,7 +91,7 @@ export function PatientOnboardingModal({
         doctorId: Number(doctorId) || 1,
         status: "Active",
       });
-      toast.success("Welcome to MindSafe! Your personalized profile is ready.");
+      toast.success("Welcome to MediSafe! Your personalized profile is ready.");
       onComplete();
     } catch (err: any) {
       console.warn("Patient onboarding error, proceeding to care space:", err);
@@ -110,7 +110,7 @@ export function PatientOnboardingModal({
               <Sparkles size={13} className="text-[#327064]" />
               Confidential Intake · Step {step} of 3
             </span>
-            <h2 className="section-title text-xl mt-1">Welcome to MindSafe, {initialName}</h2>
+            <h2 className="section-title text-xl mt-1">Welcome to MediSafe, {initialName}</h2>
           </div>
           <div className="flex items-center gap-3">
             <div className="flex gap-1.5">

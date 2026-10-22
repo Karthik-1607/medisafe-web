@@ -1,4 +1,4 @@
-// Preconfigured storage helpers for MindSafe
+// Preconfigured storage helpers for MediSafe
 // Uploads via Forge Server presigned URL to S3 if available, or local disk storage fallback.
 
 import fs from "fs";

@@ -6,7 +6,7 @@ const doctorUser: SessionUser = {
   id: 1,
   openId: "workflow-doctor",
   name: "Dr. Meera Mehta",
-  email: "meera@mindsafe.test",
+  email: "meera@medisafe.test",
   loginMethod: "password",
   role: "user",
   createdAt: new Date(),

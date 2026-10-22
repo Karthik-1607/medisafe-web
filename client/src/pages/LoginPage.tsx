@@ -55,7 +55,7 @@ export default function LoginPage() {
     try {
       if (mode === "register") {
         await register.mutateAsync({ name: name.trim(), email: email.trim(), password, role });
-        toast.success("Account created — welcome to MindSafe.");
+        toast.success("Account created — welcome to MediSafe.");
       } else {
         await login.mutateAsync({ email: email.trim(), password });
         toast.success("Signed in securely.");
@@ -86,7 +86,7 @@ export default function LoginPage() {
       <header className="login-header">
         <Link href="/" className="journey-brand">
           <span className="landing-brand-mark"><Leaf size={20} /></span>
-          <span><strong>mindsafe</strong><small>a softer way forward</small></span>
+          <span><strong>medisafe</strong><small>a softer way forward</small></span>
         </Link>
         <div className="login-header-actions">
           <button className="theme-toggle" onClick={() => toggleTheme?.()} aria-label="Toggle theme">
@@ -112,7 +112,7 @@ export default function LoginPage() {
           <div className="login-card-top">
             <div>
               <span className="landing-section-eyebrow">{mode === "login" ? "Welcome back" : "Create your account"}</span>
-              <h2>{mode === "login" ? "Sign in to MindSafe" : "Join MindSafe"}</h2>
+              <h2>{mode === "login" ? "Sign in to MediSafe" : "Join MediSafe"}</h2>
             </div>
             <ShieldCheck size={22} />
           </div>
@@ -187,13 +187,13 @@ export default function LoginPage() {
             Continue with demo access
           </button>
           <p className="login-legal">
-            By continuing, you agree to MindSafe’s privacy and care-use terms. MindSafe is not an emergency service or a diagnosis.
+            By continuing, you agree to MediSafe’s privacy and care-use terms. MediSafe is not an emergency service or a diagnosis.
           </p>
         </section>
       </main>
 
       <footer className="journey-footer">
-        <Link href="/"><Leaf size={16} /> mindsafe</Link>
+        <Link href="/"><Leaf size={16} /> medisafe</Link>
         <span><LockKeyhole size={13} /> Secure session</span>
         <Link href="/help">Help & privacy</Link>
       </footer>

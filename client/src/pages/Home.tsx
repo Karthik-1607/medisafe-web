@@ -106,7 +106,7 @@ function initialsOf(name: string): string {
 }
 
 /** Session intention survives reloads without leaving the browser. */
-const INTENTION_STORAGE_KEY = "mindsafe.session-intention";
+const INTENTION_STORAGE_KEY = "medisafe.session-intention";
 
 /** Time-of-day greeting in English or Telugu (Tenglish keeps English). */
 function greetingForNow(language: Language): string {
@@ -135,7 +135,7 @@ function Logo() {
         <Leaf size={20} strokeWidth={2.2} />
       </div>
       <div>
-        <div className="brand-name">mindsafe</div>
+        <div className="brand-name">medisafe</div>
         <div className="brand-caption">a softer way forward</div>
       </div>
     </div>
@@ -859,10 +859,10 @@ function PatientCareTeam({ patientId = 1, patient }: { patientId?: number; patie
       : "Dr. Meera Mehta";
   const doctorSpecialty =
     doctorId === 2
-      ? "Clinical Psychology · MindSafe Care"
+      ? "Clinical Psychology · MediSafe Care"
       : doctorId === 3
-      ? "Behavioral Health · MindSafe Care"
-      : "Psychiatry · MindSafe Care";
+      ? "Behavioral Health · MediSafe Care"
+      : "Psychiatry · MediSafe Care";
   const doctorInitials = doctorId === 2 ? "RS" : doctorId === 3 ? "AR" : "MM";
 
   const createNoteMutation = trpc.notes.create.useMutation();
@@ -1369,7 +1369,7 @@ function PatientProfileView({
               </span>
             </div>
             <p className="text-xs text-[#71817d] mt-1">
-              Account Email: <strong>{user?.email || "patient@mindsafe.care"}</strong> · ID: #{patientId}
+              Account Email: <strong>{user?.email || "patient@medisafe.care"}</strong> · ID: #{patientId}
             </p>
           </div>
         </div>
@@ -1930,7 +1930,7 @@ function DoctorOverview({ onNavigate }: { onNavigate: (nav: NavId) => void }) {
           <h2 className="doctor-heading mt-4">Good care starts<br /><em>with noticing.</em></h2>
           <p className="doctor-copy mt-4">A focused view of the people who are trusting you with their next step.</p>
         </div>
-        <div className="doctor-hero-stamp"><Stethoscope size={22} /><span>MindSafe<br />care room</span></div>
+        <div className="doctor-hero-stamp"><Stethoscope size={22} /><span>MediSafe<br />care room</span></div>
       </section>
 
       <section className="grid gap-4 md:grid-cols-3">
@@ -2384,7 +2384,7 @@ function PortalContent({
 
 export default function Home() {
   useEffect(() => {
-    document.title = "MindSafe — A softer way forward";
+    document.title = "MediSafe — A softer way forward";
   }, []);
   const [language, setLanguage] = useState<Language>(getStoredLanguage);
   const { theme, toggleTheme } = useTheme();
@@ -2468,7 +2468,7 @@ export default function Home() {
 
   if (meQuery.isLoading) {
     return (
-      <div className="mindsafe-app flex min-h-screen items-center justify-center">
+      <div className="medisafe-app flex min-h-screen items-center justify-center">
         <p className="animate-pulse text-sm text-[#788984]">Opening your care space…</p>
       </div>
     );
@@ -2480,7 +2480,7 @@ export default function Home() {
   }
 
   return (
-    <div className="mindsafe-app">
+    <div className="medisafe-app">
       <div className="ambient-glow ambient-glow-one" />
       <div className="ambient-glow ambient-glow-two" />
       <aside className={cn("app-sidebar", mobileOpen && "app-sidebar-open")}>
@@ -2602,7 +2602,7 @@ export default function Home() {
                     onClick={() => { navigate("Companion"); setShowSearchModal(false); }}
                     className="w-full text-left p-3 rounded-xl bg-[#f8fbf8] hover:bg-[#eef5f2] border border-[#e2eae4] flex items-center justify-between text-xs font-bold text-[#173330]"
                   >
-                    <span className="flex items-center gap-2"><MessageCircle size={16} className="text-[#39796c]" /> MindSafe AI Companion Chat</span>
+                    <span className="flex items-center gap-2"><MessageCircle size={16} className="text-[#39796c]" /> MediSafe AI Companion Chat</span>
                     <ChevronRight size={15} />
                   </button>
                 )}

@@ -1,7 +1,7 @@
 import type { Language } from "./language";
 
 /**
- * MindSafe is organised around two journeys: mental wellbeing (depression,
+ * MediSafe is organised around two journeys: mental wellbeing (depression,
  * anxiety, sleep, mood) and recovery (drug addiction, dependence, cravings).
  * Everything in the public header follows that model, and resources that are
  * useful for both journeys are deliberately repeated under each of them.

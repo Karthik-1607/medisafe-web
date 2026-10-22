@@ -12,7 +12,7 @@ import {
 
 const read = (path: string) => readFileSync(resolve(process.cwd(), path), "utf8");
 
-describe("MindSafe navigation model", () => {
+describe("MediSafe navigation model", () => {
   it("leads with the two journeys and uses 'Mental wellbeing' as the label", () => {
     expect(pillars.map((pillar) => pillar.id)).toEqual(["wellbeing", "recovery"]);
     expect(pillars[0].href).toBe("/mental-health");

@@ -77,7 +77,7 @@ async function startServer() {
       const text = await generateCompanionReply(parsed.data);
       res.json({ text });
     } catch (error) {
-      console.error("[MindSafe chat] request failed", error);
+      console.error("[MediSafe chat] request failed", error);
       res.status(503).json({ error: "The companion is temporarily unavailable." });
     }
   });
@@ -117,7 +117,7 @@ async function startServer() {
       res.end();
     } catch (error) {
       if (controller.signal.aborted) return;
-      console.error("[MindSafe chat] streaming request failed", error);
+      console.error("[MediSafe chat] streaming request failed", error);
       finished = true;
       sendEvent({ type: "error", message: "I couldn’t finish that reply. Your message is still here—please try again." });
       res.end();

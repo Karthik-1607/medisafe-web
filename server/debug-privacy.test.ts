@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import viteConfig from "../vite.config";
 
-describe("MindSafe development logging privacy", () => {
+describe("MediSafe development logging privacy", () => {
   it("does not register the removed Manus debug collector plugin", () => {
     const names = (viteConfig.plugins ?? []).map((plugin) =>
       !Array.isArray(plugin) && plugin ? (plugin as { name?: string }).name : undefined,

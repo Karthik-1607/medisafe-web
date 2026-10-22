@@ -41,12 +41,12 @@ export function SiteHeader({ language, onLanguageChange }: HeaderProps) {
   return (
     <header className="site-header">
       <div className="site-header-inner">
-        <Link href="/" className="site-brand" aria-label="MindSafe home">
+        <Link href="/" className="site-brand" aria-label="MediSafe home">
           <span className="landing-brand-mark">
             <Leaf size={20} />
           </span>
           <span>
-            <strong>mindsafe</strong>
+            <strong>medisafe</strong>
             <small>a softer way forward</small>
           </span>
         </Link>

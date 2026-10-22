@@ -18,14 +18,14 @@ const savedConversation: Conversation = {
   ],
 };
 
-describe("saved MindSafe conversation filtering", () => {
+describe("saved MediSafe conversation filtering", () => {
   it("excludes welcome-only drafts so cleared history stays empty", () => {
     expect(filterSavedConversations([blankDraft])).toEqual([]);
     expect(filterSavedConversations([])).toEqual([]);
   });
 
   it("persists cleared history as an empty array and removes legacy transcript keys", () => {
-    const store = new Map<string, string>([["mindsafe.messages", "legacy transcript"], ["mindsafe.sessions", "legacy sessions"]]);
+    const store = new Map<string, string>([["medisafe.messages", "legacy transcript"], ["medisafe.sessions", "legacy sessions"]]);
     vi.stubGlobal("window", {
       localStorage: {
         getItem: (key: string) => store.get(key) ?? null,
@@ -36,8 +36,8 @@ describe("saved MindSafe conversation filtering", () => {
     try {
       expect(persistConversations(filterSavedConversations([blankDraft]))).toBe(true);
       expect(store.get(conversationStorageKey)).toBe("[]");
-      expect(store.has("mindsafe.messages")).toBe(false);
-      expect(store.has("mindsafe.sessions")).toBe(false);
+      expect(store.has("medisafe.messages")).toBe(false);
+      expect(store.has("medisafe.sessions")).toBe(false);
     } finally {
       vi.unstubAllGlobals();
     }

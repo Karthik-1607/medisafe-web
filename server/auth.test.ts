@@ -30,7 +30,7 @@ const doctorUser: SessionUser = {
   id: 1,
   openId: "test-doctor",
   name: "Dr. Test",
-  email: "doctor@mindsafe.test",
+  email: "doctor@medisafe.test",
   loginMethod: "password",
   role: "user",
   createdAt: new Date(),
@@ -45,13 +45,13 @@ const patientUser: SessionUser = {
   id: 7,
   openId: "test-patient",
   name: "Test Patient",
-  email: "patient@mindsafe.test",
+  email: "patient@medisafe.test",
   portalRole: "patient",
   patientId: 1,
 };
 
 const ACCOUNTS_PATH = path.join(process.cwd(), "uploads", "accounts.json");
-const testEmail = `login-flow-${Date.now()}@mindsafe.test`;
+const testEmail = `login-flow-${Date.now()}@medisafe.test`;
 const testPassword = "correct-horse-battery";
 
 function removeTestAccount() {

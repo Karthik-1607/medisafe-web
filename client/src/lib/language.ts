@@ -14,10 +14,10 @@ export const languageShortLabels: Record<Language, string> = {
 
 export function getStoredLanguage(): Language {
   if (typeof window === "undefined") return "english";
-  const stored = window.localStorage.getItem("mindsafe-language");
+  const stored = window.localStorage.getItem("medisafe-language");
   return stored === "telugu" || stored === "tenglish" ? stored : "english";
 }
 
 export function storeLanguage(language: Language) {
-  if (typeof window !== "undefined") window.localStorage.setItem("mindsafe-language", language);
+  if (typeof window !== "undefined") window.localStorage.setItem("medisafe-language", language);
 }

@@ -50,7 +50,7 @@ function buildMessages(input: CompanionRequest): Message[] {
     ? "The user chose 'More detail'. You can share a deeper reflection, a gentle perspective, or a practical 2-step coping technique across 2 to 3 comforting paragraphs."
     : "Keep your response conversational, warm, and natural — usually 2 to 4 gentle, well-spaced sentences. Do not be overly brief or abrupt; let it feel like a real human caring conversation.";
 
-  const systemPrompt = `You are MindSafe, an exceptionally warm, compassionate, empathetic, and interactive companion. You are speaking with someone who has come to you for comfort, emotional support, and a listening ear.
+  const systemPrompt = `You are MediSafe, an exceptionally warm, compassionate, empathetic, and interactive companion. You are speaking with someone who has come to you for comfort, emotional support, and a listening ear.
 
 CORE CONVERSATIONAL PRINCIPLES — TALK LIKE A REAL, ATTENTIVE HUMAN:
 1. Speak with genuine human empathy and emotional presence. Never sound like a robotic FAQ, a sterile clinical textbook, or an automated chatbot giving one-line bullet answers.
@@ -85,7 +85,7 @@ function getDynamicCompanionReply(input: CompanionRequest): string {
     }
     if (lang === "Tanglish") {
       return isDetailed
-        ? "Namaskaram! Nenu MindSafe companion ni, mee tho untanu. Eeroju mottham okesari tension padalsina avasaram ledu. Mee manasulo em undo share chesukondi."
+        ? "Namaskaram! Nenu MediSafe companion ni, mee tho untanu. Eeroju mottham okesari tension padalsina avasaram ledu. Mee manasulo em undo share chesukondi."
         : "Hello! Nenu mee companion ni. Eeroju mee feeling ela undi?";
     }
     return isDetailed
@@ -200,15 +200,15 @@ function getDynamicCompanionReply(input: CompanionRequest): string {
     return "I'm so glad to hear that. Acknowledging a moment of ease or gratitude helps anchor it in your memory. I'm always right here whenever you want to check in.";
   }
 
-  // 9. Questions about MindSafe or How it works
+  // 9. Questions about MediSafe or How it works
   if (/\b(who are you|what are you|what can you do|how to use|features)\b/i.test(lower) || /మీరు ఎవరు|సహాయం/i.test(lower) || /\b(meeru evaru|what can you do)\b/i.test(lower)) {
     if (lang === "తెలుగు") {
       return "నేను మైండ్‌సేఫ్ సహచరుడిని. మీ మానసిక ఆరోగ్యం, రోజువారీ ఆందోళనలను పంచుకోవడానికి, శ్వాస వ్యాయామాలకు నేను ఇక్కడ ఉంటాను. నేను డాక్టర్‌ని కాను, కానీ మీ భావాలను పంచుకోవడానికి సురక్షితమైన ప్రదేశాన్ని అందిస్తాను.";
     }
     if (lang === "Tanglish") {
-      return "Nenu MindSafe AI Companion ni. Mee thoughts, daily stress, sleep concerns ni share chesukovadaniki ikkade untanu. Nenu doctor ni kaadu, kani meeku safe supportive space provide chestanu.";
+      return "Nenu MediSafe AI Companion ni. Mee thoughts, daily stress, sleep concerns ni share chesukovadaniki ikkade untanu. Nenu doctor ni kaadu, kani meeku safe supportive space provide chestanu.";
     }
-    return "I am MindSafe, your supportive companion. You can chat with me about your stress, sleep, mood, or prepare questions for your doctor. I don't give diagnoses, but I provide a safe, private space to reflect and find calm.";
+    return "I am MediSafe, your supportive companion. You can chat with me about your stress, sleep, mood, or prepare questions for your doctor. I don't give diagnoses, but I provide a safe, private space to reflect and find calm.";
   }
 
   // 10. Default reflective continuation tailored to message length
@@ -252,7 +252,7 @@ export async function generateCompanionReplyStream(
       });
       return {};
     } catch (err) {
-      console.warn("[MindSafe Companion] Gemini stream failed, trying fallback:", err);
+      console.warn("[MediSafe Companion] Gemini stream failed, trying fallback:", err);
     }
   }
 
@@ -264,7 +264,7 @@ export async function generateCompanionReplyStream(
       onToken,
     });
   } catch (err) {
-    console.warn("[MindSafe Companion] streamLLM fell back to intelligent response:", err);
+    console.warn("[MediSafe Companion] streamLLM fell back to intelligent response:", err);
     const fallback = getDynamicCompanionReply(input);
     const words = fallback.split(" ");
     for (let i = 0; i < words.length; i++) {
@@ -291,7 +291,7 @@ export async function generateCompanionReply(input: CompanionRequest) {
       });
       if (text) return text;
     } catch (err) {
-      console.warn("[MindSafe Companion] Gemini invoke failed, trying fallback:", err);
+      console.warn("[MediSafe Companion] Gemini invoke failed, trying fallback:", err);
     }
   }
 
@@ -304,7 +304,7 @@ export async function generateCompanionReply(input: CompanionRequest) {
     const text = typeof content === "string" ? content.trim() : "";
     if (text) return text;
   } catch (err) {
-    console.warn("[MindSafe Companion] invokeLLM fell back to intelligent response:", err);
+    console.warn("[MediSafe Companion] invokeLLM fell back to intelligent response:", err);
   }
   return getDynamicCompanionReply(input);
 }

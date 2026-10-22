@@ -13,7 +13,7 @@ function createPublicContext(): TrpcContext {
   };
 }
 
-describe("MindSafe portal foundation", () => {
+describe("MediSafe portal foundation", () => {
   it("does not expose an authenticated user in a public session", async () => {
     const caller = appRouter.createCaller(createPublicContext());
     const result = await caller.auth.me();

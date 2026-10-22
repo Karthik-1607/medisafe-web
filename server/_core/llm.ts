@@ -484,7 +484,7 @@ export type StreamLLMParams = {
 /** Streams text deltas from the managed LLM service and stops upstream work when cancelled. */
 export async function streamLLM({ messages, maxTokens, signal, onToken }: StreamLLMParams): Promise<string> {
   if (!ENV.forgeApiKey) {
-    const fallback = "I'm MindSafe, your supportive companion. I'm here to listen, share gentle wellness reflections, and help you take today one small step at a time. What's on your mind?";
+    const fallback = "I'm MediSafe, your supportive companion. I'm here to listen, share gentle wellness reflections, and help you take today one small step at a time. What's on your mind?";
     const words = fallback.split(" ");
     for (let i = 0; i < words.length; i++) {
       if (signal.aborted) return "";

@@ -26,8 +26,8 @@ const copy = {
   english: {
     eyebrow: "Private support · Doctor-connected · Built for real life",
     title: <>A safer way to<br /><em>move forward.</em></>,
-    intro: "MindSafe brings mental-health support, recovery education, mood insight, and doctor-supervised care into one calm place.",
-    primary: "Explore MindSafe",
+    intro: "MediSafe brings mental-health support, recovery education, mood insight, and doctor-supervised care into one calm place.",
+    primary: "Explore MediSafe",
     secondary: "I need help now",
     trust: "Confidential by design. Human care when it matters.",
     sectionTitle: "Support for the whole journey.",
@@ -38,12 +38,12 @@ const copy = {
       ["I’m worried about someone", "Practical guidance for family and friends, with clear boundaries and ways to reach professional help.", "Find a way to help", "blue"],
       ["Emergency support", "Immediate resources, crisis guidance, and a direct path to help when waiting is not the right option.", "See emergency options", "rose"],
     ],
-    journeyEyebrow: "Inside MindSafe",
+    journeyEyebrow: "Inside MediSafe",
     journeyTitle: "Care that remembers the whole person.",
     journeyCopy: "A patient can start with a check-in, a question, or a quiet conversation. Their doctor sees the meaningful pattern, not just a single score.",
     cta: "Enter the care space",
     safetyTitle: "Supportive, not diagnostic.",
-    safetyCopy: "MindSafe is designed to listen, organize, and connect people with care. It never replaces emergency services or a licensed doctor.",
+    safetyCopy: "MediSafe is designed to listen, organize, and connect people with care. It never replaces emergency services or a licensed doctor.",
     storiesTitle: "Real life is not linear.",
     storiesCopy: "The product should feel useful on an ordinary Tuesday, not just during a crisis.",
     footer: "A softer way forward.",
@@ -51,8 +51,8 @@ const copy = {
   telugu: {
     eyebrow: "ప్రైవేట్ సహాయం · వైద్యుల అనుసంధానం · నిజ జీవితానికి",
     title: <>ముందుకు వెళ్లడానికి<br /><em>సురక్షితమైన మార్గం.</em></>,
-    intro: "మానసిక ఆరోగ్య సహాయం, రికవరీ విద్య, మూడ్ అవగాహన, మరియు వైద్యుల సంరక్షణను MindSafe ఒక ప్రశాంతమైన స్థలంలో కలుపుతుంది.",
-    primary: "MindSafe చూడండి",
+    intro: "మానసిక ఆరోగ్య సహాయం, రికవరీ విద్య, మూడ్ అవగాహన, మరియు వైద్యుల సంరక్షణను MediSafe ఒక ప్రశాంతమైన స్థలంలో కలుపుతుంది.",
+    primary: "MediSafe చూడండి",
     secondary: "ఇప్పుడే సహాయం కావాలి",
     trust: "మీ గోప్యతను దృష్టిలో ఉంచి రూపొందించబడింది.",
     sectionTitle: "మీ ప్రయాణానికి సంపూర్ణ సహాయం.",
@@ -63,12 +63,12 @@ const copy = {
       ["ఎవరినైనా గురించి ఆందోళనగా ఉందా?", "కుటుంబం మరియు స్నేహితులకు ఉపయోగపడే స్పష్టమైన మార్గదర్శకాలు.", "ఎలా సహాయపడాలో చూడండి", "blue"],
       ["అత్యవసర సహాయం", "తక్షణ వనరులు, క్రైసిస్ మార్గదర్శకాలు, మరియు సరైన సహాయం పొందే మార్గం.", "అత్యవసర ఎంపికలు", "rose"],
     ],
-    journeyEyebrow: "MindSafe లో",
+    journeyEyebrow: "MediSafe లో",
     journeyTitle: "మొత్తం వ్యక్తిని గుర్తుంచుకునే సంరక్షణ.",
     journeyCopy: "ఒక చెక్-ఇన్, ఒక ప్రశ్న, లేదా నిశ్శబ్ద సంభాషణతో ప్రారంభించండి. వైద్యుడు ఒక్క స్కోర్ కాదు, మారుతున్న నమూనాను చూస్తారు.",
     cta: "కేర్ స్పేస్‌లోకి వెళ్లండి",
     safetyTitle: "సహాయకం, నిర్ధారణ కాదు.",
-    safetyCopy: "MindSafe వినడానికి, సమాచారాన్ని క్రమబద్ధీకరించడానికి, మరియు సంరక్షణకు అనుసంధానించడానికి రూపొందించబడింది.",
+    safetyCopy: "MediSafe వినడానికి, సమాచారాన్ని క్రమబద్ధీకరించడానికి, మరియు సంరక్షణకు అనుసంధానించడానికి రూపొందించబడింది.",
     storiesTitle: "నిజ జీవితం సరళంగా ఉండదు.",
     storiesCopy: "ఈ ఉత్పత్తి కష్ట సమయంలో మాత్రమే కాదు, సాధారణ రోజుల్లో కూడా ఉపయోగపడాలి.",
     footer: "ముందుకు వెళ్లడానికి ఒక మృదువైన మార్గం.",
@@ -76,8 +76,8 @@ const copy = {
   tenglish: {
     eyebrow: "Private support · Doctor connection · Real life kosam",
     title: <>Oka safer way to<br /><em>move forward.</em></>,
-    intro: "MindSafe mental-health support, recovery education, mood insight, mariyu doctor-supervised care ni oka calm place lo kaluputundi.",
-    primary: "MindSafe explore cheyyandi",
+    intro: "MediSafe mental-health support, recovery education, mood insight, mariyu doctor-supervised care ni oka calm place lo kaluputundi.",
+    primary: "MediSafe explore cheyyandi",
     secondary: "Naaku ippude help kavali",
     trust: "Mee privacy ni mind lo petti design chesam.",
     sectionTitle: "Mee journey motham kosam support.",
@@ -88,12 +88,12 @@ const copy = {
       ["Evaraina gurinchi worry ga unda?", "Family and friends kosam practical guidance, boundaries, mariyu professional help ki clear path.", "Help ela cheyyalo", "blue"],
       ["Emergency support", "Immediate resources, crisis guidance, mariyu wait cheyyakudadani anipinchinappudu help ki direct path.", "Emergency options", "rose"],
     ],
-    journeyEyebrow: "MindSafe lo",
+    journeyEyebrow: "MediSafe lo",
     journeyTitle: "Motham person ni gurthupettukune care.",
     journeyCopy: "Check-in, question, leda quiet conversation tho start cheyyachu. Doctor okka score kaadu, meaningful pattern ni chustaru.",
     cta: "Care space loki vellandi",
     safetyTitle: "Supportive, diagnosis kaadu.",
-    safetyCopy: "MindSafe listen cheyyadaniki, organize cheyyadaniki, care tho connect cheyyadaniki design chesam. Emergency services ki replacement kaadu.",
+    safetyCopy: "MediSafe listen cheyyadaniki, organize cheyyadaniki, care tho connect cheyyadaniki design chesam. Emergency services ki replacement kaadu.",
     storiesTitle: "Real life linear ga undadu.",
     storiesCopy: "Product crisis time lo matrame kaadu, ordinary Tuesday lo kuda useful ga undali.",
     footer: "Oka softer way forward.",
@@ -103,7 +103,7 @@ const copy = {
 type Copy = (typeof copy)[Language];
 
 function Brand() {
-  return <Link href="/" className="landing-brand"><span className="landing-brand-mark"><Leaf size={21} /></span><span><strong>mindsafe</strong><small>a softer way forward</small></span></Link>;
+  return <Link href="/" className="landing-brand"><span className="landing-brand-mark"><Leaf size={21} /></span><span><strong>medisafe</strong><small>a softer way forward</small></span></Link>;
 }
 
 function FeatureIcon({ type }: { type: string }) {
@@ -119,7 +119,7 @@ export default function LandingPage() {
   const [language, setLanguage] = useState<Language>(() => getStoredLanguage() === "telugu" ? "telugu" : "english");
   const t: Copy = copy[language];
   useEffect(() => {
-    document.title = "MindSafe — A softer way forward";
+    document.title = "MediSafe — A softer way forward";
   }, []);
   useEffect(() => storeLanguage(language), [language]);
 
@@ -179,10 +179,10 @@ export default function LandingPage() {
 
       <LandingSection className="landing-learn" id="learn"><div className="landing-section-heading"><div><span className="landing-section-eyebrow">03 · Learn at your pace</span><h2>Knowledge can be a form of care.</h2></div><p>Short, readable resources that help patients and families understand what is happening — and what to do next.</p></div><div className="landing-learn-grid"><article className="learn-feature-card"><div className="learn-feature-visual"><div className="learn-sun" /><div className="learn-shape learn-shape-one" /><div className="learn-shape learn-shape-two" /><span>mental health / recovery / support</span></div><div className="learn-feature-body"><span className="landing-tool-label">Featured guide</span><h3>If this continues…<br /><em>what could help?</em></h3><p>Understand patterns early, make room for support, and choose a next step that is realistic.</p><Link href="/portal">Read the guide <ArrowUpRight size={15} /></Link></div></article><div className="learn-list-card"><span className="landing-tool-label">Explore topics</span><h3>For the next ten minutes.</h3><div className="learn-list"><Link href="/portal"><span className="learn-list-icon"><BookOpen size={16} /></span><span><strong>Depression, without the jargon</strong><small>Read · 6 min</small></span><ArrowUpRight size={15} /></Link><Link href="/portal"><span className="learn-list-icon learn-list-icon-blue"><Play size={15} fill="currentColor" /></span><span><strong>What a craving can feel like</strong><small>Watch · 4 min</small></span><ArrowUpRight size={15} /></Link><Link href="/portal"><span className="learn-list-icon learn-list-icon-sand"><Users size={16} /></span><span><strong>How to support someone safely</strong><small>Read · 5 min</small></span><ArrowUpRight size={15} /></Link></div></div></div></LandingSection>
 
-      <LandingSection className="landing-emergency" id="emergency"><div className="landing-emergency-copy"><span className="landing-eyebrow landing-eyebrow-warm"><CircleAlert size={14} /> When waiting is not the right option</span><h2>Urgent help<br /><em>should be clear.</em></h2><p>{t.safetyCopy}</p><div className="landing-emergency-actions"><Link href="/emergency" className="landing-emergency-primary">See emergency support <ArrowUpRight size={16} /></Link><Link href="/portal" className="landing-emergency-secondary">Open patient safety tools</Link></div></div><div className="landing-emergency-panel"><div className="landing-emergency-panel-head"><span className="landing-mini-orb landing-mini-orb-warm"><ShieldCheck size={14} /></span><span>MindSafe safety layer</span><span className="landing-safety-live"><i /> active</span></div><div className="landing-safety-line"><span>Every companion message</span><strong>screened for safety</strong></div><div className="landing-safety-line"><span>Emergency language</span><strong>EN · తెలుగు · TE</strong></div><div className="landing-safety-line"><span>Care team status</span><strong className="landing-status-ready">ready to notify</strong></div><div className="landing-safety-note"><LockKeyhole size={13} /> Your safety comes before the conversation.</div></div></LandingSection>
+      <LandingSection className="landing-emergency" id="emergency"><div className="landing-emergency-copy"><span className="landing-eyebrow landing-eyebrow-warm"><CircleAlert size={14} /> When waiting is not the right option</span><h2>Urgent help<br /><em>should be clear.</em></h2><p>{t.safetyCopy}</p><div className="landing-emergency-actions"><Link href="/emergency" className="landing-emergency-primary">See emergency support <ArrowUpRight size={16} /></Link><Link href="/portal" className="landing-emergency-secondary">Open patient safety tools</Link></div></div><div className="landing-emergency-panel"><div className="landing-emergency-panel-head"><span className="landing-mini-orb landing-mini-orb-warm"><ShieldCheck size={14} /></span><span>MediSafe safety layer</span><span className="landing-safety-live"><i /> active</span></div><div className="landing-safety-line"><span>Every companion message</span><strong>screened for safety</strong></div><div className="landing-safety-line"><span>Emergency language</span><strong>EN · తెలుగు · TE</strong></div><div className="landing-safety-line"><span>Care team status</span><strong className="landing-status-ready">ready to notify</strong></div><div className="landing-safety-note"><LockKeyhole size={13} /> Your safety comes before the conversation.</div></div></LandingSection>
 
       <LandingSection className="landing-final"><span className="landing-section-eyebrow">{t.footer}</span><h2>There is room for<br /><em>a next step.</em></h2><p>{t.storiesCopy}</p><Link href="/portal" className="landing-primary-action">{t.primary} <ArrowRight size={17} /></Link></LandingSection>
     </main>
-    <footer className="landing-footer"><Brand /><div><span>Private support for real life.</span><span>English · తెలugu</span><Link href="/login">Sign in</Link><a href="mailto:hello@mindsafecare.com" className="landing-email-link" aria-label="Email us">hello@mindsafecare.com</a></div><span>© {new Date().getFullYear()} MindSafe</span></footer>
+    <footer className="landing-footer"><Brand /><div><span>Private support for real life.</span><span>English · తెలugu</span><Link href="/login">Sign in</Link><a href="mailto:hello@medisafecare.com" className="landing-email-link" aria-label="Email us">hello@medisafecare.com</a></div><span>© {new Date().getFullYear()} MediSafe</span></footer>
   </div>;
 }

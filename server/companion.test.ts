@@ -6,7 +6,7 @@ const request = (content: string, language: "English" | "తెలుగు" | "
   messages: [{ role: "user", content }],
 });
 
-describe("MindSafe companion safety and response preferences", () => {
+describe("MediSafe companion safety and response preferences", () => {
   it("defaults to concise replies without requiring a profile name", () => {
     const parsed = request("I have a question about sleep.");
     expect(parsed.detailLevel).toBe("concise");

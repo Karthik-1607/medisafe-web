@@ -1,5 +1,5 @@
 /**
- * Local credential accounts + signed session tokens for MindSafe.
+ * Local credential accounts + signed session tokens for MediSafe.
  *
  * This prototype must run with no database and no external identity provider
  * configured, so accounts live in `uploads/accounts.json` (git-ignored runtime
@@ -229,7 +229,7 @@ export function sessionUserFromClaims(claims: SessionClaims): SessionUser {
   const now = new Date();
   return {
     id: claims.accountId,
-    openId: claims.demo ? "demo:mindsafe" : `local:${claims.email}`,
+    openId: claims.demo ? "demo:medisafe" : `local:${claims.email}`,
     name: claims.name,
     email: claims.email,
     loginMethod: claims.demo ? "demo" : "password",
@@ -259,7 +259,7 @@ export async function authenticateLocalSession(req: {
 export function demoSessionClaims(): SessionClaims {
   return {
     accountId: 0,
-    email: "demo@mindsafe.local",
+    email: "demo@medisafe.local",
     name: "Demo Patient",
     portalRole: "patient",
     patientId: DEFAULT_PATIENT_ID,

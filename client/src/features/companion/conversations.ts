@@ -20,9 +20,9 @@ export type Conversation = {
   messages: ChatMessage[];
 };
 
-const STORAGE_KEY = "mindsafe.conversations.v1";
-const LEGACY_MESSAGES_KEY = "mindsafe.messages";
-const LEGACY_SESSIONS_KEY = "mindsafe.sessions";
+const STORAGE_KEY = "medisafe.conversations.v1";
+const LEGACY_MESSAGES_KEY = "medisafe.messages";
+const LEGACY_SESSIONS_KEY = "medisafe.sessions";
 
 export function formatMessageTime(date = new Date()): string {
   return date.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" });
@@ -113,7 +113,7 @@ export function titleFromMessage(text: string): string {
 
 export function loadConversations(): Conversation[] {
   if (typeof window === "undefined") return [createConversation()];
-  const saved = safeParseStorage(STORAGE_KEY);
+  const saved = safeParseStorage(STORAGE_KEY) ?? safeParseStorage("mindsafe.conversations.v1");
   if (Array.isArray(saved)) {
     const valid = saved.filter(isConversation).map(conversation => ({
       ...conversation,

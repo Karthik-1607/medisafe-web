@@ -1,6 +1,6 @@
-# MindSafe
+# MediSafe
 
-MindSafe is a prototype mental-wellness companion and clinician portal. It contains seeded sample records; do not use it with real patient data or for clinical care until persistence and crisis-safety behavior have been reviewed and completed.
+MediSafe is a prototype mental-wellness companion and clinician portal. It contains seeded sample records; do not use it with real patient data or for clinical care until persistence and crisis-safety behavior have been reviewed and completed.
 
 ## Development
 

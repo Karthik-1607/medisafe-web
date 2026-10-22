@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-describe("MindSafe destination routes", () => {
+describe("MediSafe destination routes", () => {
   it("registers the core public journeys and recovery states", () => {
     const app = readFileSync(resolve(process.cwd(), "client/src/App.tsx"), "utf8");
     expect(app).toContain('path="/mental-health"');
