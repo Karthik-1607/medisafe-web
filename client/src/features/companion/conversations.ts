@@ -39,7 +39,7 @@ export function makeWelcomeMessage(): ChatMessage {
   return {
     id: newId("welcome"),
     role: "assistant",
-    text: "Hi, I’m here. What’s on your mind?",
+    text: "Hello there. I'm right here with you, and this is your safe, judgment-free space. How are you feeling in your mind and heart today?",
     time: formatMessageTime(),
     status: "done",
   };

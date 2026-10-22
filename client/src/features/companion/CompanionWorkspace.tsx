@@ -396,6 +396,27 @@ export function CompanionWorkspace({ language: propLanguage, setLanguage: propSe
             </div>
           ))}
         </div>
+        {/* Interactive Quick Prompts */}
+        {!isTyping && (
+          <div className="chat-chips-scroll">
+            {language === "Tanglish" ? (
+              <>
+                <button type="button" onClick={() => sendMessage("Konchem anxious ga undi")} className="chat-chip">🌱 Anxious ga undi</button>
+                <button type="button" onClick={() => sendMessage("Nidra pattatledu, em cheyyali?")} className="chat-chip">🌙 Nidra pattatledu</button>
+                <button type="button" onClick={() => sendMessage("Breathing exercise cheddama?")} className="chat-chip">🫁 Breathing exercise</button>
+                <button type="button" onClick={() => sendMessage("Just matladataniki safe space kavali")} className="chat-chip">🤝 Just listening kavali</button>
+              </>
+            ) : (
+              <>
+                <button type="button" onClick={() => sendMessage("I'm feeling anxious and overwhelmed today")} className="chat-chip">🌱 Feeling overwhelmed</button>
+                <button type="button" onClick={() => sendMessage("My mind won't stop overthinking")} className="chat-chip">💭 Mind won't stop racing</button>
+                <button type="button" onClick={() => sendMessage("Can you guide me through a 1-minute calming breath?")} className="chat-chip">🫁 Quick calming breath</button>
+                <button type="button" onClick={() => sendMessage("I just need a safe space to vent and be heard")} className="chat-chip">🤝 Just need to vent</button>
+              </>
+            )}
+          </div>
+        )}
+
         <form className="composer-wrap" onSubmit={event => { event.preventDefault(); sendMessage(); }}>
           <div className="composer">
             <button className={`composer-icon ${isListening ? "listening" : ""}`} type="button" onClick={startListening} aria-label={isListening ? "Listening" : "Use voice input"} title="Voice input"><Mic size={18} /></button>
